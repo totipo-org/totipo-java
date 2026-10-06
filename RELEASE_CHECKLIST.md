@@ -1,5 +1,10 @@
 # Totipo Java 0.1.1 release checklist
 
+The worktree now prepares 0.1.2 for whole-Alternative selection. The 0.1.1
+provenance and workflow instructions below remain historical release guidance.
+Before releasing 0.1.2, prepare its reviewed notes and update the workflow
+explicitly as required below; this API change performs no release actions.
+
 The implementation version comes from `VERSION`; protocol compatibility is
 independent. Version 0.1.1 aligns to Totipo Vault Format v1/r18 without portable
 behavior changes from the prior r17 pin. Specification revisions do not

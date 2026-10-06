@@ -8,6 +8,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import java.nio.file.*;
 import java.time.*;
 import java.util.*;
@@ -366,6 +367,158 @@ class PublicApiTest {
             assertTrue(a.unresolvedFields().contains("secret"));
             assertThrows(IllegalArgumentException.class, () -> b.secret(a.secretChoices().get(0)));
             saved(a.issuer("resolved").secret(a.secretChoices().get(0)).save());
+        }
+    }
+    private TokenState wholeValueConflict() {
+        var original = create("base");
+        try (var secret = NewSecret.copyOf(new byte[]{1, 4, 7});
+             var update = session.state().update(original.heads().get(0))) {
+            saved(update.issuer("A").account("account-A").status(TokenStatus.ACTIVE)
+                    .secret(secret).algorithm(TotpAlgorithm.SHA256).digits(6).period(Duration.ofSeconds(45)).save());
+        }
+        try (var secret = NewSecret.copyOf(new byte[]{2, 5, 8});
+             var update = session.state().update(original.heads().get(0))) {
+            saved(update.issuer("B").account("account-B").status(TokenStatus.TOMBSTONED)
+                    .secret(secret).algorithm(TotpAlgorithm.SHA512).digits(7).period(Duration.ofSeconds(60)).save());
+        }
+        return refresh(session).token(original.id()).orElseThrow();
+    }
+    private MergeToken compose(MergeToken merge, TokenAlternative selected) {
+        var d = selected.descriptor();
+        return merge.issuer(d.issuer()).account(d.account()).status(d.status())
+                .algorithm(d.algorithm()).digits(d.digits()).period(d.period())
+                .secret(merge.secretChoices().stream().filter(c -> c.alternatives().contains(selected)).findFirst().orElseThrow());
+    }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void keepTransfersEverySemanticFieldIncludingDeletedAndHiddenSecret(boolean deleted) {
+        var conflict = wholeValueConflict();
+        var selected = conflict.alternatives().stream()
+                .filter(a -> (a.descriptor().status() == TokenStatus.TOMBSTONED) == deleted).findFirst().orElseThrow();
+        int writes = store.publications;
+        try (var merge = session.state().merge(conflict.id()); var ingress = NewSecret.copyOf(new byte[]{9})) {
+            // Replace every previous builder field and a caller-provided secret in one operation.
+            merge.issuer("discard").account("discard").secret(ingress);
+            assertSame(merge, merge.keep(selected));
+            assertTrue(merge.unresolvedFields().isEmpty()); assertEquals(writes, store.publications);
+            saved(merge.save());
+        }
+        var resolved = refresh(session).token(conflict.id()).orElseThrow();
+        assertEquals(1, resolved.alternatives().size());
+        assertEquals(selected.descriptor(), resolved.alternatives().get(0).descriptor());
+        // Alternative equality includes secret equivalence and every semantic field, excluding heads.
+        assertEquals(selected, resolved.alternatives().get(0));
+    }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void composedWholeValueMergeRegression(boolean deleted) {
+        var conflict = wholeValueConflict();
+        var selected = conflict.alternatives().stream()
+                .filter(a -> (a.descriptor().status() == TokenStatus.TOMBSTONED) == deleted).findFirst().orElseThrow();
+        try (var merge = session.state().merge(conflict.id())) { saved(compose(merge, selected).save()); }
+        assertEquals(selected, refresh(session).token(conflict.id()).orElseThrow().alternatives().get(0));
+    }
+    @Test void keepAndComposedEquivalentProduceIdenticalRevision() {
+        var conflict = wholeValueConflict(); var selected = conflict.alternatives().get(0);
+        var state = session.state();
+        try (var keep = state.merge(conflict.id()); var composed = state.merge(conflict.id())) {
+            keep.keep(selected); compose(composed, selected);
+            var kept = saved(keep.save());
+            // The second builder's original basis remains frozen, so the first save is new information.
+            int writes = store.publications;
+            var additional = assertInstanceOf(SaveResult.AdditionalConflict.class, composed.save());
+            assertEquals(writes, store.publications);
+            try (var partial = additional.resolution()) {
+                assertEquals(kept.revisions(), saved(partial.save()).revisions());
+            }
+        }
+        assertEquals(selected, refresh(session).token(conflict.id()).orElseThrow().alternatives().get(0));
+    }
+    @Test void keepAllowsLaterExplicitSettersAndRepeatedSelection() {
+        var conflict = wholeValueConflict(); var selected = conflict.alternatives().get(0);
+        try (var merge = session.state().merge(conflict.id())) {
+            merge.keep(conflict.alternatives().get(1)).keep(selected).issuer("deliberate");
+            saved(merge.save());
+            assertThrows(IllegalStateException.class, () -> merge.keep(selected));
+        }
+        var resolved = refresh(session).token(conflict.id()).orElseThrow().alternatives().get(0);
+        var d = selected.descriptor();
+        assertEquals(new TokenDescriptor(d.status(), "deliberate", d.account(), d.algorithm(), d.digits(), d.period()), resolved.descriptor());
+        try (var comparison = session.state().merge(List.of(selected, resolved))) {
+            assertEquals(1, comparison.secretChoices().size());
+        }
+    }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void keepSelectsAlternativeRegardlessOfHeadMultiplicity(boolean majority) {
+        var original = create("base"); var head = original.heads().get(0);
+        branch(head, "A"); branch(head, "A"); var conflict = branch(head, "B");
+        var selected = conflict.alternatives().stream().filter(a -> a.descriptor().issuer().equals(majority ? "A" : "B")).findFirst().orElseThrow();
+        assertEquals(majority ? 2 : 1, selected.heads().size()); assertEquals(2, conflict.alternatives().size());
+        try (var merge = session.state().merge(conflict.id())) { saved(merge.keep(selected).save()); }
+        assertEquals(selected, refresh(session).token(conflict.id()).orElseThrow().alternatives().get(0));
+    }
+    @Test void keepRejectsOutOfBasisWithoutChangingBuilderOrPublishing() {
+        var original = create("base"); var stale = original.alternatives().get(0);
+        var conflict = wholeValueConflict(); var selected = conflict.alternatives().get(0);
+        var omitted = conflict.alternatives().get(1);
+        try (var merge = session.state().merge(List.of(selected)); var foreign = store.open()) {
+            finished(foreign); int writes = store.publications;
+            merge.keep(selected);
+            assertThrows(IllegalArgumentException.class, () -> merge.keep(stale));
+            assertThrows(IllegalArgumentException.class, () -> merge.keep(omitted));
+            assertThrows(IllegalArgumentException.class, () -> merge.keep(foreign.state().tokens().get(0).alternatives().get(0)));
+            assertThrows(NullPointerException.class, () -> merge.keep(null));
+            assertEquals(writes, store.publications); saved(merge.save());
+        }
+        assertTrue(refresh(session).token(conflict.id()).orElseThrow().alternatives().contains(selected));
+    }
+    @Test void keepRejectsHistoricalAndNewEqualValuedHeadsOutsideCapturedBasis() {
+        var original = create("base"); var stale = original.alternatives().get(0);
+        var next = branch(original.heads().get(0), "base"); var selected = next.alternatives().get(0);
+        assertEquals(stale, selected);
+        try (var merge = session.state().merge(next.id())) {
+            merge.keep(selected);
+            assertThrows(IllegalArgumentException.class, () -> merge.keep(stale));
+            var latest = branch(original.heads().get(0), "base").alternatives().get(0);
+            assertEquals(selected, latest);
+            assertThrows(IllegalArgumentException.class, () -> merge.keep(latest));
+        }
+    }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void keepRetainsAdditionalConflictWithoutPublication(boolean equal) {
+        var original = create("base"); var conflict = branch(original.heads().get(0), "A");
+        var selected = conflict.alternatives().get(0);
+        try (var merge = session.state().merge(conflict.id()).keep(selected)) {
+            branch(original.heads().get(0), equal ? "A" : "new");
+            int writes = store.publications;
+            var result = assertInstanceOf(SaveResult.AdditionalConflict.class, merge.save());
+            assertEquals(writes, store.publications);
+            result.resolution().close();
+            try (var reopened = result.latest().merge(conflict.id())) {
+                saved(reopened.keep(result.latest().token(conflict.id()).orElseThrow().alternatives().get(0)).save());
+            }
+        }
+    }
+    @Test void keepRetainsExactMonotonicPublicationUncertainty() {
+        var conflict = wholeValueConflict(); var selected = conflict.alternatives().get(0);
+        try (var merge = session.state().merge(conflict.id()).keep(selected)) {
+            store.publicationMode = 2; int first = store.attemptedIds.size();
+            var uncertain = assertInstanceOf(SaveResult.PublicationUncertain.class, merge.save());
+            store.publicationMode = 1;
+            var again = assertInstanceOf(SaveResult.PublicationUncertain.class, uncertain.retry().retryPublication());
+            uncertain.retry().close(); store.publicationMode = 0;
+            saved(again.retry().retryPublication()); again.retry().close();
+            assertEquals(store.attemptedIds.get(first), store.attemptedIds.get(first + 2));
+            assertArrayEquals(store.attemptedBytes.get(first), store.attemptedBytes.get(first + 2));
+        }
+        assertEquals(selected, refresh(session).token(conflict.id()).orElseThrow().alternatives().get(0));
+    }
+    @Test void keepPublicBoundaryOnlyAcceptsAlternativeAndReturnsBuilder() throws Exception {
+        var method = MergeToken.class.getMethod("keep", TokenAlternative.class);
+        assertEquals(MergeToken.class, method.getReturnType());
+        assertEquals(List.of(TokenAlternative.class), List.of(method.getParameterTypes()));
+        assertEquals(1, Arrays.stream(MergeToken.class.getDeclaredMethods()).filter(m -> m.getName().equals("keep")).count());
+        for (var type : List.of(MergeToken.class, MergeSecretChoice.class, TokenAlternative.class)) {
+            assertTrue(Arrays.stream(type.getMethods()).noneMatch(m -> m.getReturnType() == byte[].class
+                    || m.getReturnType() == NewSecret.class));
         }
     }
     @Test void mergeNewConcurrentInformationReturnsIndependentPartialResolution() {

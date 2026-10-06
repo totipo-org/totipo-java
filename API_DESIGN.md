@@ -208,6 +208,28 @@ or select a `MergeSecretChoice` issued by that exact merge builder. Choices from
 another merge are rejected even in the same session. State-level secret groups
 cannot be passed as merge choices. Unresolved save returns definite `Failed`.
 
+`merge.keep(alternative)` atomically initializes issuer, account, lifecycle status,
+hidden secret, algorithm, digits and period to one complete captured semantic
+Alternative, including a TOMBSTONED value. Later explicit setters may modify that
+result, and another `keep` replaces all semantic fields again. Metadata remains
+separate and is not copied from a supporting Head. This selects an Alternative,
+not a Head: multiple Heads can support one value and Head count conveys no
+preference. The reference must be a same-session semantic Alternative represented
+in the captured inputs, with all of its captured Heads in the merge basis;
+otherwise it is rejected with `IllegalArgumentException` before changing fields.
+Null is rejected with `NullPointerException`. Equal semantic identity alone does
+not authorize historical or newly observed Heads outside that basis.
+
+The builder transfers the existing secret using its own `MergeSecretChoice`,
+without returning secret material, comparing TOTP codes or recapturing state.
+Publication happens only on `save`, using the same freeze, freshness gate and
+publication/retry path as field composition. `AdditionalConflict` and
+`PublicationUncertain` remain possible. `update(alternative)` cannot replace this
+operation: it has different parent selection and lacks merge freshness checking.
+Manual merge composition remains supported, but requires callers to correlate
+all seven fields and the secret choice correctly; `keep` makes whole-value
+selection a single operation.
+
 `NewSecret.copyOf(bytes)` defensively copies caller ingress, has a redacted
 `toString`, and wipes its owned copy on close. Its `copy()` supplies an owned copy
 of that caller-provided input only; callers using it must wipe their copy.

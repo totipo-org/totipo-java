@@ -430,13 +430,32 @@ final class ApplicationSession implements VaultSession {
         @Override public TokenCompetition competingValues() { return competition; }
         @Override public List<MergeSecretChoice> secretChoices() { return choices; }
         @Override public List<String> unresolvedFields() { return access(() -> { editable(); return unresolved(); }); }
+        @Override public MergeToken keep(TokenAlternative selection) {
+            return edit(() -> {
+                var selected = alternative(selection);
+                if (!basis.containsAll(parents(selected.heads)))
+                    throw new IllegalArgumentException("Alternative outside merge basis");
+                var choice = choices.stream().map(c -> (Choice) c)
+                        .filter(c -> c.alternatives.contains(selected)).findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("Alternative outside merge basis"));
+                var captured = choice.alternatives.stream().filter(selected::equals).findFirst().orElseThrow();
+                var d = captured.descriptor();
+                // All validation precedes mutation; use the same owned secret choice as composed merges.
+                selectSecret(choice);
+                status = d.status(); issuer = d.issuer(); account = d.account();
+                algorithm = d.algorithm(); digits = d.digits(); period = d.period();
+            });
+        }
         @Override public MergeToken secret(MergeSecretChoice selection) {
             return edit(() -> {
                 Objects.requireNonNull(selection);
                 if (!(selection instanceof Choice choice) || choice.merge != this) throw new IllegalArgumentException("Foreign merge choice");
-                if (override != null) override.clear(); override = null;
-                inheritedSecret = alternative(choice.alternatives.get(0)).key;
+                selectSecret(choice);
             });
+        }
+        private void selectSecret(Choice choice) {
+            if (override != null) override.clear(); override = null;
+            inheritedSecret = alternative(choice.alternatives.get(0)).key;
         }
         boolean additional() {
             // Walk ancestry from F0, including references that resolved this pass. Captured
