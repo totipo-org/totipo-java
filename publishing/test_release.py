@@ -102,6 +102,28 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "clean"):
                     release.identity()
 
+    def test_notes_are_selected_by_requested_version(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(release, "ROOT", Path(directory)):
+            review = Path(directory, "review"); review.mkdir()
+            (review / "V0_1_1_RELEASE_NOTES.md").write_text("## v0.1.1\n\nold notes")
+            (review / "V0_1_3_RELEASE_NOTES.md").write_text("## v0.1.3\n\nnew notes")
+            self.assertEqual(release.reviewed_notes("0.1.3"), "## v0.1.3\n\nnew notes")
+            with self.assertRaisesRegex(RuntimeError, "Missing reviewed release notes"):
+                release.reviewed_notes("0.1.2")
+            (review / "V0_1_3_RELEASE_NOTES.md").write_text("## v0.1.1\n\nwrong version")
+            with self.assertRaisesRegex(RuntimeError, "do not match"):
+                release.reviewed_notes("0.1.3")
+
+    def test_notes_fail_in_preflight_before_remote_checks(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(release, "ROOT", Path(directory)):
+            Path(directory, "VERSION").write_text("0.1.1\n")
+            Path(directory, "SPEC_PIN.md").write_bytes(b"pin")
+            with patch.object(release, "SPEC_PIN_SHA256", release.hashlib.sha256(b"pin").hexdigest()), patch.object(release, "git", side_effect=["a" * 40, ""]) as commands, patch.object(release, "request") as network:
+                with self.assertRaisesRegex(RuntimeError, "Missing reviewed release notes"):
+                    release.identity()
+                self.assertEqual(len(commands.call_args_list), 2)
+                network.assert_not_called()
+
     def test_remote_mismatch_fails_permanently(self):
         with patch.object(release, "compare_inventory"), patch.object(release, "inventory", return_value={"artifact": "0" * 64}), patch.object(release, "request", return_value=(200, b"wrong")):
             with self.assertRaisesRegex(RuntimeError, "PERMANENT artifact hash mismatch"):
@@ -141,6 +163,8 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(release, "ROOT", Path(directory)):
             Path(directory, "VERSION").write_text("0.1.1\n")
             Path(directory, "SPEC_PIN.md").write_bytes(b"pin")
+            Path(directory, "review").mkdir()
+            Path(directory, "review/V0_1_1_RELEASE_NOTES.md").write_text("## v0.1.1\n\nreviewed")
             with patch.object(release, "SPEC_PIN_SHA256", release.hashlib.sha256(b"pin").hexdigest()), patch.object(release, "git", side_effect=["a" * 40, "", "", "a" * 40, "b" * 40 + "\trefs/tags/v0.1.1", ""]):
                 with self.assertRaisesRegex(RuntimeError, "never move"):
                     release.identity(allow_tag=True)
@@ -183,16 +207,17 @@ class ReleaseTests(unittest.TestCase):
 
     def test_absent_tag_creates_annotation_at_exact_commit_then_release(self):
         os.environ["GH_TOKEN"] = "fake-token"
+        os.environ["REQUESTED_VERSION"] = "0.1.3"
         with tempfile.TemporaryDirectory() as directory, patch.object(release, "ROOT", Path(directory)):
             Path(directory, "review").mkdir()
-            Path(directory, "review/V0_1_1_RELEASE_NOTES.md").write_text("## v0.1.1\n\nreviewed")
+            Path(directory, "review/V0_1_3_RELEASE_NOTES.md").write_text("## v0.1.3\n\nreviewed")
             with patch.object(release, "identity"), patch.object(release, "git", side_effect=["tag", "unsigned annotated tag", "", "", "", "", "tag", ""]) as commands, patch.object(release, "release_record", return_value=None), patch.object(release.subprocess, "run") as create:
                 release.tag_release()
-                commands.assert_any_call("-c", "tag.gpgSign=false", "tag", "-a", "v0.1.1", "a" * 40, "-m", "totipo-java 0.1.1")
+                commands.assert_any_call("-c", "tag.gpgSign=false", "tag", "-a", "v0.1.3", "a" * 40, "-m", "totipo-java 0.1.3")
                 push = commands.call_args_list[-1]
-                self.assertEqual(push.args, ("push", "origin", "refs/tags/v0.1.1"))
+                self.assertEqual(push.args, ("push", "origin", "refs/tags/v0.1.3"))
                 self.assertNotIn("fake-token", " ".join(push.args))
-                self.assertEqual(create.call_args.args[0][:4], ["gh", "release", "create", "v0.1.1"])
+                self.assertEqual(create.call_args.args[0][:4], ["gh", "release", "create", "v0.1.3"])
                 self.assertIn("--verify-tag", create.call_args.args[0])
 
 

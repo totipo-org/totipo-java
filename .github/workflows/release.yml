@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact VERSION to release (for example, 0.1.1)
+        description: Exact VERSION to release (for example, 0.1.3)
         required: true
         type: string
       commit:
@@ -56,7 +56,7 @@ jobs:
           ref: ${{ steps.inputs.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify identity and release absence
+      - name: Verify identity, reviewed notes and release absence
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 publishing/release.py identity

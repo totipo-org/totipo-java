@@ -186,10 +186,11 @@ and the specification snapshot are excluded from publications.
 
 `VERSION` is the single implementation version source. Protocol compatibility is
 separate: this worktree targets v1/r18, aligned from the prior v1/r17 pin without
-portable behavior changes. `VERSION` is prepared as 0.1.2 for the additive
-`MergeToken.keep(TokenAlternative)` API patch; it has not been published. The published 0.1.1 consumption examples
-above remain applicable until a separately reviewed release. See
-[the whole-Alternative review](review/WHOLE_ALTERNATIVE_KEEP_REPORT.md).
+portable behavior changes. `VERSION` is prepared as 0.1.3, retaining the additive
+`MergeToken.keep(TokenAlternative)` API and fixing version-specific release notes
+validation. The consumption examples above describe 0.1.1; 0.1.3 is pending its
+separately reviewed release. See [the 0.1.3 preparation report](review/V0_1_3_RELEASE_PREPARATION_REPORT.md)
+and [the whole-Alternative review](review/WHOLE_ALTERNATIVE_KEEP_REPORT.md).
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
 credential-free validation and the protected release-environment approval gate.

@@ -61,12 +61,21 @@ def release_record(version):
     return json.loads(body) if status == 200 else None
 
 
+def reviewed_notes(version):
+    path = ROOT / "review" / f"V{version.replace('.', '_')}_RELEASE_NOTES.md"
+    require(path.is_file(), f"Missing reviewed release notes: {path.relative_to(ROOT)}")
+    notes = path.read_text()
+    require(notes.startswith(f"## v{version}\n"), "Reviewed release notes do not match requested version")
+    return notes
+
+
 def identity(allow_tag=False):
     version, commit = inputs()
     require(git("rev-parse", "HEAD") == commit, "Checkout differs from reviewed commit")
     require((ROOT / "VERSION").read_text() == version + "\n", "VERSION differs from requested version")
     require(not git("status", "--porcelain", "--untracked-files=all"), "Checkout must be clean")
     require(hashlib.sha256((ROOT / "SPEC_PIN.md").read_bytes()).hexdigest() == SPEC_PIN_SHA256, "Exact reviewed spec pin changed")
+    reviewed_notes(version)
     git("fetch", "--no-recurse-submodules", "--tags", "origin", "+refs/heads/main:refs/remotes/origin/main")
     require(git("rev-parse", "refs/remotes/origin/main") == commit, "Current origin/main differs from reviewed commit")
     tag = f"refs/tags/v{version}"
@@ -227,8 +236,7 @@ def tag_release():
     tag = f"v{version}"
     require(git("cat-file", "-t", "v0.1.0") == "tag", "Established source-tag style must remain annotated")
     require("-----BEGIN PGP SIGNATURE-----" not in git("cat-file", "-p", "v0.1.0"), "Existing source-tag signing policy needs human review")
-    notes = (ROOT / "review/V0_1_1_RELEASE_NOTES.md").read_text()
-    require(notes.startswith(f"## {tag}\n"), "Reviewed release notes do not match requested version; update the release workflow for the next version")
+    notes = reviewed_notes(version)
     body = notes.rstrip() + f"\n\n### Release provenance\n\n- Java source commit: `{commit}`\n- Totipo v1/r18 spec commit: `{SPEC_COMMIT}`\n- Portable corpus: 90/90 executed, none deferred.\n"
     record = release_record(version)
     if record:

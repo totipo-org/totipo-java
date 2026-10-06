@@ -1,19 +1,15 @@
-# Totipo Java 0.1.1 release checklist
+# Totipo Java 0.1.3 release checklist
 
-The worktree now prepares 0.1.2 for whole-Alternative selection. The 0.1.1
-provenance and workflow instructions below remain historical release guidance.
-Before releasing 0.1.2, prepare its reviewed notes and update the workflow
-explicitly as required below; this API change performs no release actions.
-
-The implementation version comes from `VERSION`; protocol compatibility is
-independent. Version 0.1.1 aligns to Totipo Vault Format v1/r18 without portable
-behavior changes from the prior r17 pin. Specification revisions do not
-mechanically determine the Java semantic version.
+The worktree prepares 0.1.3, retaining the whole-Alternative API introduced in
+0.1.2 and fixing version-specific release notes validation. The implementation
+version comes from `VERSION`; protocol compatibility is independent. The protocol
+remains Totipo Vault Format v1/r18. Specification revisions do not mechanically
+determine the Java semantic version.
 
 Release provenance:
 
-- Maven coordinates: `org.totipo:totipo-core:0.1.1` and
-  `org.totipo:totipo-storage-nio:0.1.1`.
+- Maven coordinates: `org.totipo:totipo-core:0.1.3` and
+  `org.totipo:totipo-storage-nio:0.1.3`.
 - Protocol: v1/r18, specification commit
   `4623a7e1718e23504903096c92332597057bd8f0`; authoritative hashes in `SPEC_PIN.md`.
 - Conformance: protocol-foundation core operations, audited facade TOKEN projections
@@ -26,7 +22,7 @@ Release provenance:
 - Portable corpus: 90/90, none deferred; reconfirmed on the exact release commit.
 - Java source commit: the operator enters the full reviewed SHA at dispatch. The
   workflow appends it to the GitHub release body, leaving committed reviewed notes
-  unchanged. Annotated source tag convention: `v0.1.1`, matching unsigned `v0.1.0`.
+  unchanged. Annotated source tag convention: `v0.1.3`, matching unsigned `v0.1.0`.
 - Java 17 production bytecode; builds use pinned Gradle 9.8.0 and JDK 25.
 - Qualification limits in README still apply; no new desktop, Android, provider,
   independent interoperability, or security-audit claim follows from publication.
@@ -49,13 +45,15 @@ preflight (no release secrets)
   `main` through the repository's usual review process. Keep `main` at that commit
   while releasing; identity checks fail if it moves.
 - [ ] Verify `VERSION`, the exact r18 pin, corpus outcomes and reviewed
-  `review/V0_1_1_RELEASE_NOTES.md`. A future version needs its own reviewed notes
-  and an explicit workflow update; the initial workflow uses the v0.1.1 notes.
+  `review/V0_1_3_RELEASE_NOTES.md`. A future version needs its own reviewed notes
+  matching `review/V<version-with-dots-replaced-by-underscores>_RELEASE_NOTES.md`.
+  Identity preflight and the final job both validate the version heading; no
+  per-version script/workflow edit is needed.
 - [ ] Confirm authority for the Central namespace `org.totipo`, Portal user-token
   credentials, and a Central-compatible signing key/public-key distribution.
 - [ ] Complete the one-time environment setup below.
 - [ ] In Actions → **Release** → **Run workflow**, select **main** and enter:
-  - `version`: `0.1.1`, exactly matching `VERSION`.
+  - `version`: `0.1.3`, exactly matching `VERSION`.
   - `commit`: the full **40 lowercase hexadecimal characters** of the reviewed
     current `main` commit. Abbreviated SHAs are rejected.
 - [ ] Review preflight evidence; approve deployment to **release** when prompted.
