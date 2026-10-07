@@ -24,7 +24,12 @@ final class NioObjectStorage {
     private NioObjectStorage(Path root, Operations operations) { this.root = root; this.operations = operations; }
     static class Operations {
         private final StorageDurability durability;
-        Operations(StorageDurability durability) { this.durability = java.util.Objects.requireNonNull(durability); }
+        private final NioCanonicalInstaller installer;
+        Operations(StorageDurability durability) { this(durability, NioCanonicalInstaller.HARD_LINK); }
+        Operations(StorageDurability durability, NioCanonicalInstaller installer) {
+            this.durability = Objects.requireNonNull(durability);
+            this.installer = Objects.requireNonNull(installer);
+        }
         void at(String point) throws IOException {}
         int write(FileChannel channel, ByteBuffer bytes) throws IOException { return channel.write(bytes); }
         void force(FileChannel channel, String point) throws IOException { at(point); channel.force(true); }
@@ -33,6 +38,25 @@ final class NioObjectStorage {
         byte[] readExisting(Path target, String point, int limit) throws IOException { at(point); return NioFiles.read(target, limit); }
         void link(Path target, Path temp) throws IOException {
             Files.createLink(target, temp);
+        }
+        void installIfAbsent(Path target, Path temp) throws IOException {
+            if (installer == NioCanonicalInstaller.HARD_LINK) link(target, temp);
+            else installer.installIfAbsent(target, temp);
+        }
+        void checkAbsent(Path target) throws IOException { installer.checkAbsent(target); }
+        void finishStage(FileChannel stage) throws IOException {
+            // A private move need not rename an open file; the shared link path retains its channel.
+            if (installer == NioCanonicalInstaller.PRIVATE_MOVE) stage.close();
+        }
+        void forceInstalled(FileChannel stage, Path target) throws IOException {
+            if (installer == NioCanonicalInstaller.HARD_LINK) force(stage, "post-link-sync");
+            else {
+                // A provider may implement an ordinary move by copying; force the actual canonical file.
+                NioFiles.regular(target);
+                try (var canonical = FileChannel.open(target, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
+                    force(canonical, "post-link-sync");
+                }
+            }
         }
     }
     boolean publish(String name, byte[] exactObjectBytes, boolean acknowledgeExisting) throws IOException {
@@ -68,8 +92,12 @@ final class NioObjectStorage {
         try (var channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
             NioFiles.write(channel, owned, operations::write);
             operations.force(channel, "stage-sync");
+            operations.finishStage(channel);
             operations.at("before-link");
-            try { mutationEntered = true; operations.link(target, temp); }
+            try {
+                operations.checkAbsent(target);
+                mutationEntered = true; operations.installIfAbsent(target, temp);
+            }
             catch (FileAlreadyExistsException exists) {
                 mutationEntered = false;
                 Path exact = NioFiles.findExactDirectChild(directory, name)
@@ -81,7 +109,7 @@ final class NioObjectStorage {
             operations.at("after-link");
             if (acknowledgeExisting && NioFiles.findExactDirectChild(directory, name).isEmpty())
                 throw new IOException("EXACT_TARGET_UNAVAILABLE");
-            operations.force(channel, "post-link-sync");
+            operations.forceInstalled(channel, target);
             operations.sync(directory, "directory-sync");
             return true;
         } finally { NioFiles.cleanup(temp); }

@@ -177,6 +177,51 @@ retry barrier cannot acknowledge success. Case-alias collisions are never exact
 existing success. Creating the namespace or leaving temporary artifacts without
 publishing the exact object is compatible with Failed for that target.
 
+### Explicit private/exclusive local NIO mode
+
+`NioTotipoStore.openPrivate(root)` and its `StorageDurability` overload explicitly
+select complete-stage ordinary moves for new immutable objects and initial VAULT
+installation. All existing `open` factories, convenience entry points and legacy
+adapters retain hard links. A link failure never selects private mode automatically.
+
+The root must be controlled exclusively by the application, with no independent
+ordinary writer and no synchronization software directly changing its directory.
+Remote/provider bytes are reconciled through a separate application-controlled
+bridge. All calls across handles/sessions using the root must be serialized by the
+application; the existing core gate serializes only one session. Opening does not
+verify or enforce these assumptions. Same-privilege malicious races remain outside
+baseline r18; accidental concurrent application writers violate the private-mode
+configuration as well. This mode is inappropriate for directly synchronized/shared
+vault directories.
+
+Private publication completes and forces a noncanonical stage, closes its channel,
+freshly checks exact target absence, and calls `Files.move` without any options.
+It never requests `REPLACE_EXISTING` or `ATOMIC_MOVE` for initial installation.
+The latter has provider-specific existing-target replacement behavior. Ordinary
+move rejects an existing target but is not atomic no-replace exclusion against a
+writer racing within the provider. The application-wide exclusion requirement
+removes that ordinary race. Errors, interruption, stale observations and unexpected
+targets still receive conservative results; an exception after move entry is
+Uncertain unless a definite no-effect collision is established. Pre-entry errors
+are Failed. Exact collision winners are compared/acknowledged normally; different
+objects and existing/wrong-kind VAULT entries survive unchanged.
+
+After private installation NIO forces the actual canonical file and then its
+directory. This additional canonical force is needed because a provider may
+implement ordinary move by copying; forcing the old stage alone is insufficient.
+The root barrier before new object mutation, stronger exact-existing SPI retry
+barriers, staging read-back/validation, same-stage installation, one-attempt
+ownership, cleanup and result types remain unchanged. VAULT replacement uses the
+same existing atomic-replacement attempt and ordinary-replacement fallback in both
+modes. Ordinary moves may expose intermediate effects on weaker providers; r18
+§18 allows that despite complete staging, but prohibits deliberate progressive
+canonical materialization. No such materialization is implemented.
+
+r18 permits read-only exact-existing success without a fresh persistence barrier.
+The SPI's stronger acknowledgement requirement is a separate pre-existing Java
+contract issue, retained unchanged in both modes; private installation does not
+require changing it.
+
 ## Explicit vault staging
 
 `prepareVault` creates a noncanonical representation and never installs or

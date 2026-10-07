@@ -23,11 +23,29 @@ final class NioVaultStorage {
     private NioVaultStorage(Path root, Operations operations) { this.root = root; this.operations = operations; }
     static class Operations {
         private final StorageDurability durability;
-        Operations(StorageDurability durability) { this.durability = java.util.Objects.requireNonNull(durability); }
+        private final NioCanonicalInstaller installer;
+        Operations(StorageDurability durability) { this(durability, NioCanonicalInstaller.HARD_LINK); }
+        Operations(StorageDurability durability, NioCanonicalInstaller installer) {
+            this.durability = java.util.Objects.requireNonNull(durability);
+            this.installer = java.util.Objects.requireNonNull(installer);
+        }
         Path temporary(Path root) throws IOException { return NioFiles.temporary(root, ".totipo-vault-"); }
         int write(FileChannel channel, ByteBuffer bytes) throws IOException { return channel.write(bytes); }
         void syncStage(FileChannel channel) throws IOException { channel.force(true); }
         void link(Path target, Path temp) throws IOException { Files.createLink(target, temp); }
+        void installIfAbsent(Path target, Path temp) throws IOException {
+            if (installer == NioCanonicalInstaller.HARD_LINK) link(target, temp);
+            else installer.installIfAbsent(target, temp);
+        }
+        void checkAbsent(Path target) throws IOException { installer.checkAbsent(target); }
+        void syncInstalled(Path target) throws IOException {
+            if (installer == NioCanonicalInstaller.PRIVATE_MOVE) {
+                NioFiles.regular(target);
+                try (var channel = FileChannel.open(target, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
+                    syncStage(channel);
+                }
+            }
+        }
         void atomicMove(Path temp, Path target) throws IOException {
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -79,9 +97,11 @@ final class NioVaultStorage {
         }
         public void installInitialDurably() throws IOException {
             attempt(false);
+            operations.checkAbsent(root.resolve("vault"));
             mutationEntered = true;
-            try { operations.link(root.resolve("vault"), temp); }
+            try { operations.installIfAbsent(root.resolve("vault"), temp); }
             catch (FileAlreadyExistsException exists) { mutationEntered = false; throw exists; }
+            operations.syncInstalled(root.resolve("vault"));
             operations.syncDirectory(root);
         }
         public void replaceCanonicalDurably() throws IOException {

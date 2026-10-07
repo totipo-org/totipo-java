@@ -20,6 +20,33 @@ public final class NioTotipoStore implements TotipoStore {
         return open(root, new NioObjectStorage.Operations(durability),
                 new NioVaultStorage.Operations(durability), new ScanOperations());
     }
+    /** Open an explicitly private/exclusive local store using complete-stage moves for new files.
+     * The root must be controlled exclusively by the application: no independent ordinary writers
+     * or synchronization software may mutate it. The application must serialize all store calls
+     * across handles/sessions for this root; core serializes only within each session.
+     * Reconcile remote/provider bytes through a separate application-controlled bridge.
+     * Inappropriate for a directly synchronized/shared vault directory. This does not provide
+     * atomic no-replace installation or protection against same-privilege malicious races.
+     * Ordinary failures and ambiguous acknowledgements retain the usual SPI result semantics.
+     * Opening is read-only and does not verify or enforce these deployment assumptions.
+     * @param root existing local store directory
+     * @return the private store
+     * @throws IOException if the root cannot safely be opened
+     */
+    public static NioTotipoStore openPrivate(Path root) throws IOException {
+        return openPrivate(root, new NioDurability());
+    }
+    /** Open a private/exclusive local store with an explicit directory persistence capability.
+     * All deployment and serialization requirements of {@link #openPrivate(Path)} apply.
+     * @param root existing local store directory
+     * @param durability required directory persistence capability
+     * @return the private store
+     * @throws IOException if the root cannot safely be opened
+     */
+    public static NioTotipoStore openPrivate(Path root, StorageDurability durability) throws IOException {
+        return open(root, new NioObjectStorage.Operations(durability, NioCanonicalInstaller.PRIVATE_MOVE),
+                new NioVaultStorage.Operations(durability, NioCanonicalInstaller.PRIVATE_MOVE), new ScanOperations());
+    }
     static NioTotipoStore open(Path root, NioObjectStorage.Operations objects,
                               NioVaultStorage.Operations vaults, ScanOperations scans) throws IOException {
         return new NioTotipoStore(NioFiles.root(root.toAbsolutePath()), objects, vaults, scans);

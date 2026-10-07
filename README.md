@@ -138,6 +138,21 @@ atomic CAS; the remaining race is an explicit v1 limitation. Ambiguous acknowled
 never report success or trigger automatic rollback/retry. Orphan TOKEN files do not
 block creation, and rewrap does not inspect or rewrite TOKENs.
 
+The explicit `NioTotipoStore.openPrivate(root)` factory supports an
+application-private/exclusive local replica using complete forced stages and
+moves without replacement options for new objects and initial VAULT creation.
+Only the application may ordinarily write the root; synchronization software
+must not mutate it directly. The application must serialize all operations across
+every handle/session using that root and reconcile remote bytes through a separate
+controlled bridge. Core serialization covers only one session. This mode retains
+durability requests and explicit uncertainty; it provides no atomic no-replace
+guarantee against concurrent writers. It is inappropriate for a desktop's directly
+synchronized/shared directory. Existing `open` factories and `NioTotipo` entry
+points retain hard links, with no automatic fallback. Use
+`Totipo.create(NioTotipoStore.openPrivate(root), password)` or the corresponding
+`Totipo.open` call; normal store ownership rules apply.
+See [the portability investigation](review/NIO_PRIVATE_LOCAL_PORTABILITY_REPORT.md).
+
 The vault fingerprint recognizes a root; it proves neither freshness nor authorization.
 No remembered fingerprint is required to open. A saved old wrapper and its password
 can still recover the root after rewrap; v1 does not provide rollback protection.
