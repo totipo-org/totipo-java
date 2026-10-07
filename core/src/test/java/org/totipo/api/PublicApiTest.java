@@ -29,6 +29,12 @@ class PublicApiTest {
     @AfterEach void close() { session.close(); }
     static VaultState finished(VaultSession session) { return awaitState(session, s -> s.observation() instanceof ObservationProgress.Finished); }
     static VaultState refresh(VaultSession session) {
+        // A pass already in flight may have captured the store before the caller changed it.
+        // Wait for it to finish, then request and await another pass before asserting on storage.
+        refreshOnce(session);
+        return refreshOnce(session);
+    }
+    private static VaultState refreshOnce(VaultSession session) {
         var old = session.state(); session.requestRefresh(); return awaitState(session, s -> s != old && s.observation() instanceof ObservationProgress.Finished);
     }
     static VaultState awaitState(VaultSession session, Predicate<VaultState> predicate) {
@@ -656,12 +662,12 @@ class PublicApiTest {
     @Test void streamOrdersEmissionsAndObservationDiagnosticsDoNotTerminate() throws Exception {
         var probe = new Probe(); session.states().subscribe(probe); probe.subscription.request(Long.MAX_VALUE);
         assertSame(session.state(), probe.next());
-        for (int i = 0; i < 6; i++) { var state = refresh(session); assertSame(state, probe.next()); }
+        for (int i = 0; i < 6; i++) { var state = refreshOnce(session); assertSame(state, probe.next()); }
         store.observationUnavailable = true;
-        var failedObservation = refresh(session); assertFalse(failedObservation.diagnostics().isEmpty());
+        var failedObservation = refreshOnce(session); assertFalse(failedObservation.diagnostics().isEmpty());
         assertSame(failedObservation, probe.next()); assertFalse(probe.terminal);
         store.observationUnavailable = false;
-        assertSame(refresh(session), probe.next());
+        assertSame(refreshOnce(session), probe.next());
         assertEquals(probe.history.size(), new HashSet<>(probe.history).size());
         session.close(); probe.completion.get(5, TimeUnit.SECONDS);
         assertTrue(probe.received.isEmpty());
