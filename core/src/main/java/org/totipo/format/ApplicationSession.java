@@ -137,6 +137,21 @@ final class ApplicationSession implements VaultSession {
                     && observation.candidateDiagnostics().stream().noneMatch(d -> d.reason() == TokenStoreObservation.Reason.UNAVAILABLE);
         } finally { local.unlock(); }
     }
+    @Override public ObjectCandidateValidation validateObject(RevisionId objectId, byte[] representation) {
+        return providerAccess(() -> {
+            Objects.requireNonNull(objectId); Objects.requireNonNull(representation);
+            // Reject oversized input before any copy or crypto; authenticate the returned snapshot.
+            if (representation.length != EnvelopeReader.OBJECT_BYTES) return new ObjectCandidateValidation.Invalid();
+            byte[] snapshot = representation.clone();
+            var validation = TokenStoreReader.validate(internalId(objectId), snapshot, root);
+            if (validation.token() == null) return new ObjectCandidateValidation.Invalid();
+            try {
+                return new ObjectCandidateValidation.Valid(objectId, snapshot);
+            } finally {
+                validation.token().token().value().credential().secret().clear();
+            }
+        });
+    }
     @Override public PasswordChangeResult changePassword(char[] currentPassword, char[] newPassword) {
         return providerAccess(() -> ApplicationVaults.change(bootstrap, root, currentPassword, newPassword));
     }

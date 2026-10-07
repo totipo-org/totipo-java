@@ -1,4 +1,6 @@
 import org.totipo.OpenResult;
+import org.totipo.ObjectCandidateValidation;
+import org.totipo.RevisionId;
 import org.totipo.VaultSession;
 import org.totipo.VaultState;
 import org.totipo.storage.nio.NioTotipo;
@@ -38,6 +40,9 @@ public final class ConsumerSmoke {
     }
     public static OpenResult open(Path path, char[] password) {
         return NioTotipo.open(path, password);
+    }
+    public static ObjectCandidateValidation validate(VaultSession session, RevisionId id, byte[] bytes) {
+        return session.validateObject(id, bytes);
     }
     public static VaultState state(VaultSession session) {
         return session.state();

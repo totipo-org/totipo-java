@@ -42,11 +42,16 @@ final class TokenReader {
                 if (next.field() != null) next.field().clear();
                 throw invalid();
             }
-            return new TokenObject(tokenId, parents,
-                    new TokenValue(status, issuer, account,
-                            new TokenValue.Credential(algorithm, digits, period,
-                                    new SecurityBytes(secret, secret.length))),
-                    new TokenMetadata(name, time));
+            var owned = new SecurityBytes(secret, secret.length);
+            try {
+                return new TokenObject(tokenId, parents,
+                        new TokenValue(status, issuer, account,
+                                new TokenValue.Credential(algorithm, digits, period, owned)),
+                        new TokenMetadata(name, time));
+            } catch (RuntimeException | Error invalid) {
+                owned.clear();
+                throw invalid;
+            }
         } finally {
             Arrays.fill(secret, (byte) 0);
         }

@@ -110,6 +110,58 @@ accept references from any state of the same session, even if the value/head is
 no longer current. References from another session are programmer errors, even
 when the sessions opened the same root.
 
+## Independent immutable object candidates
+
+`session.validateObject(RevisionId objectId, byte[] representation)` synchronously
+validates an externally obtained `objects-v1` representation against the session's
+already authenticated root. `RevisionId` enforces the canonical 64 lowercase hex
+OBJECT_ID name. No password, root export, new key owner, store adapter or temporary
+vault is needed. Null arguments are programmer errors. Every size other than
+exactly 1024 bytes returns `ObjectCandidateValidation.Invalid` before copying or
+crypto. Callers should bound transport reads before constructing input arrays;
+the library does not allocate or scan an oversized input.
+
+The caller owns ingress and must not modify it during the synchronous call.
+Accepted-length ingress is snapshotted before validation. Envelope authentication,
+length and zero padding, keyed identity and complete canonical TOKEN grammar use
+the same path as store observation. There is no alternate semantic family within
+objects-v1; unknown grammar is Invalid, not an opaque supported future object.
+Unknown namespaces remain outside this API. VAULT password wrappers are separate.
+
+`ObjectCandidateValidation.Valid` contains only `objectId` and an owned exact
+ciphertext `representation`; construction and access defensively copy the array.
+It contains no plaintext, token value, parent IDs, metadata projection, diagnostic,
+root or session reference. Exact ciphertext retains the whole authenticated object,
+including its exact metadata. Result equality/hash compare ID and complete
+ciphertext by content. Results are descriptive, publicly constructible values,
+not trusted import capabilities. Only a successful session call establishes validation.
+
+Compare independently validated results from the same vault root. Canonical
+zero-padded v1 encryption is deterministic: equal ID and ciphertext mean identical
+complete canonical plaintext; equal IDs with unequal validated ciphertext mean
+an integrity contradiction, which must be excluded from normal evaluation.
+A single call performs no local/history comparison and cannot declare a
+contradiction. Validate local bytes through the same method when comparing them;
+current heads alone do not retain complete authenticated object representations.
+Comparisons across different vault roots carry no such meaning.
+
+Validation is serialized on the existing provider gate with scans, publication,
+password changes, other validations and final cleanup. It performs no provider
+calls, state emissions, value interning, ancestry updates, history retention or
+refresh requests. It can wait for unrelated I/O and belongs off a UI thread.
+Close rejects new entrants with `SessionClosedException`; an admitted call may
+finish while close waits for the gate, before root wiping. There is no derived
+validator to outlive the session. Immutable ciphertext results remain readable
+after close. Private replica bridge serialization requirements still apply.
+
+All candidate-related failures collapse to Invalid, including AEAD failure and
+wrong root. Provider crypto unavailability retains the existing sanitized runtime
+failure convention; raw cryptographic exceptions are not exposed. Repeated calls
+perform bounded CPU work each time, so callers control scheduling and total work.
+The default interface method throws `UnsupportedOperationException` for external
+VaultSession implementations that have not supplied this additive capability.
+Library-created sessions implement it.
+
 ## Replay-latest stream
 
 `states()` is a `Flow.Publisher<VaultState>` with independent subscription demand.
@@ -346,7 +398,7 @@ session close may block for KDF, configured-store I/O or coordination. They are
 inappropriate for Swing EDT or Android main thread.
 
 Synchronization is split into a provider gate and a local secret/lifecycle lock.
-The provider gate serializes scans, saves, retries, password change and provider
+The provider gate serializes candidate validation, scans, saves, retries, password change and provider
 cleanup. Provider reads/writes and KDF run without the local lock. The local lock
 protects canonical value maps, builder ingress overrides, ownership registration,
 local materialization/TOTP and the transition to closing. Post-read projection
