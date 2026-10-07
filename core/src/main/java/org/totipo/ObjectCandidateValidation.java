@@ -3,14 +3,25 @@ package org.totipo;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Independent current-family validation, not a graph fact or an import capability.
+/** Descriptive result of synchronous immutable object validation by an open authenticated session.
+ * Success establishes exact physical length, envelope authentication, keyed OBJECT_ID match,
+ * padding/framing validity and current semantic TOKEN validity under that vault root.
+ * It establishes neither current-head status, graph completeness, freshness, persistence,
+ * provider/store origin, remote synchronization, import nor contradiction with another candidate.
  * Values are descriptive and publicly constructible; only a session call establishes validation.
  * No plaintext, TOKEN value, parent list, key or parser diagnostics are returned. */
 public sealed interface ObjectCandidateValidation {
-    /** Malformed, unauthenticated, wrong keyed identity or invalid current TOKEN grammar. */
+    /** Candidate validation failure, including wrong vault/root, AEAD failure, keyed ID mismatch,
+     * malformed framing, padding failure or invalid current TOKEN grammar. No candidate bytes
+     * or finer crypto/parser failure diagnostics are retained. */
     record Invalid() implements ObjectCandidateValidation { }
 
-    /** Exact validated identity and ciphertext. Retains no session or secret and remains
+    /** Supplied canonical object ID and exact validated 1024-byte opaque ciphertext snapshot.
+     * Construction defensively copies the representation and access returns defensive copies.
+     * No plaintext TOKEN, secret, issuer/account, parent model, metadata projection, root,
+     * fingerprint, key or validation diagnostics are retained. toString redacts ciphertext.
+     * This publicly constructible value is descriptive; only a successful session call establishes validation.
+     * Retains no session or secret and remains
      * readable after session close. Compare only results validated against the same vault root:
      * equal IDs with unequal representations indicate an integrity contradiction.
      * Canonical v1 encryption is deterministic, including zero padding, so exact ciphertext

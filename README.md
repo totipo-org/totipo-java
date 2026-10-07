@@ -178,7 +178,7 @@ metadata changes. Normal builds do not regenerate specification vectors.
 
 ## Maven consumption
 
-The Maven coordinates for published Java implementation version **0.1.3** are
+The Maven coordinates for published Java implementation version **0.1.4** are
 shown below.
 Maven Central is the binary distribution channel; the manually dispatched
 [Release workflow](.github/workflows/release.yml) validates, signs, publishes and
@@ -186,7 +186,7 @@ verifies each release before creating its source tag and GitHub release.
 Applications consuming that version use Maven Central and:
 
 ```kotlin
-implementation("org.totipo:totipo-storage-nio:0.1.3")
+implementation("org.totipo:totipo-storage-nio:0.1.4")
 ```
 
 `totipo-storage-nio` is the normal filesystem/NIO entry point and provider. It
@@ -196,7 +196,7 @@ unchanged. For portable protocol/application API and core implementation without
 an NIO provider:
 
 ```kotlin
-implementation("org.totipo:totipo-core:0.1.3")
+implementation("org.totipo:totipo-core:0.1.4")
 ```
 
 Core brings Bouncy Castle 1.86 at runtime for Argon2id, without exposing BC as a
@@ -205,13 +205,16 @@ and the specification snapshot are excluded from publications.
 
 `VERSION` is the single implementation version source. Protocol compatibility is
 separate: this worktree targets v1/r18, aligned from the prior v1/r17 pin without
-portable behavior changes. `VERSION` is prepared as **0.1.4**, adding the explicit
-private/exclusive-local NIO mode for separately controlled local replicas. The
-consumption examples above describe published 0.1.3; 0.1.4 is under local review
-and has not been released. Physical Android requalification remains a separate
-follow-up; the new mode does not establish Android filesystem or crash safety.
-See [the 0.1.4 preparation report](review/V0_1_4_RELEASE_PREPARATION_REPORT.md)
-and [draft release notes](review/V0_1_4_RELEASE_NOTES.md).
+portable behavior changes. `VERSION` is prepared as **0.1.5**, adding
+`VaultSession.validateObject(...)` to validate externally obtained immutable object
+representations against an already-open authenticated vault without importing
+them or exposing root key material. It requires no password re-entry or KDF.
+The result is Invalid or a defensively owned exact validated ciphertext snapshot;
+it establishes neither freshness, current-head status nor persistence.
+The consumption examples above describe published 0.1.4; 0.1.5 is prepared,
+unreleased and under local review.
+See [the 0.1.5 preparation report](review/V0_1_5_RELEASE_PREPARATION_REPORT.md)
+and [draft release notes](review/V0_1_5_RELEASE_NOTES.md).
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
 credential-free validation and the protected release-environment approval gate.

@@ -13,6 +13,8 @@ no API stability promise yet.
 provider, exposing core transitively. Ordinary applications use `NioTotipo` and
 the high-level API; publication does not promote experimental SPI internals to
 normal application entry points. See README for release availability and coordinates.
+Version 0.1.5 is prepared and unreleased, adding independent object-candidate
+validation below.
 
 ## Entry points and lifecycle outcomes
 
@@ -122,11 +124,14 @@ crypto. Callers should bound transport reads before constructing input arrays;
 the library does not allocate or scan an oversized input.
 
 The caller owns ingress and must not modify it during the synchronous call.
+The library never mutates or retains the caller array.
 Accepted-length ingress is snapshotted before validation. Envelope authentication,
 length and zero padding, keyed identity and complete canonical TOKEN grammar use
 the same path as store observation. There is no alternate semantic family within
 objects-v1; unknown grammar is Invalid, not an opaque supported future object.
 Unknown namespaces remain outside this API. VAULT password wrappers are separate.
+Success does not establish current-head status, graph completeness, freshness,
+persistence, provider/store origin or remote synchronization; it performs no import.
 
 `ObjectCandidateValidation.Valid` contains only `objectId` and an owned exact
 ciphertext `representation`; construction and access defensively copy the array.
