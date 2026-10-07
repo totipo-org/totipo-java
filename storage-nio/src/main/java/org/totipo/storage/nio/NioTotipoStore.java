@@ -23,10 +23,13 @@ public final class NioTotipoStore implements TotipoStore {
     /** Open an explicitly private/exclusive local store using complete-stage moves for new files.
      * The root must be controlled exclusively by the application: no independent ordinary writers
      * or synchronization software may mutate it. The application must serialize all store calls
-     * across handles/sessions for this root; core serializes only within each session.
+     * across every writer, handle/session and bridge operation for this root;
+     * core serializes only within each session.
      * Reconcile remote/provider bytes through a separate application-controlled bridge.
-     * Inappropriate for a directly synchronized/shared vault directory. This does not provide
-     * atomic no-replace installation or protection against same-privilege malicious races.
+     * Directly synchronized/shared directories should continue using the existing shared mode
+     * unless separately qualified. Existing {@code open(...)} behavior retains hard-link
+     * publication; private mode is never an automatic fallback when hard links are unavailable.
+     * This does not provide atomic no-replace installation or protection against same-privilege malicious races.
      * Ordinary failures and ambiguous acknowledgements retain the usual SPI result semantics.
      * Opening is read-only and does not verify or enforce these deployment assumptions.
      * @param root existing local store directory

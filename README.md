@@ -127,7 +127,8 @@ Canonical namespace, existing object, and `vault` lookups select exact observed
 direct-child directory-entry spellings. Alternate-case siblings are ignored;
 provider alias collisions during no-replace creation fail conservatively.
 
-TOKEN and initial VAULT installation use no-replace hard links. The SPI NIO provider
+Default/shared TOKEN and initial VAULT installation use no-replace hard links.
+The SPI NIO provider
 attempts atomic replacement, falling back to a non-atomic move when atomic move is
 unsupported; the legacy low-level adapter retains its atomic-only contract. VAULT workflows
 open only lowercase `vault`, read at most 88 bytes, authenticate complete candidates
@@ -143,11 +144,13 @@ application-private/exclusive local replica using complete forced stages and
 moves without replacement options for new objects and initial VAULT creation.
 Only the application may ordinarily write the root; synchronization software
 must not mutate it directly. The application must serialize all operations across
-every handle/session using that root and reconcile remote bytes through a separate
-controlled bridge. Core serialization covers only one session. This mode retains
+every writer, handle/session and bridge operation using that root, and reconcile
+remote bytes through a separate controlled bridge. Core serialization covers only
+one session. This mode retains
 durability requests and explicit uncertainty; it provides no atomic no-replace
 guarantee against concurrent writers. It is inappropriate for a desktop's directly
-synchronized/shared directory. Existing `open` factories and `NioTotipo` entry
+synchronized/shared directory; continue using shared mode there unless separately
+qualified. Existing `open` factories and `NioTotipo` entry
 points retain hard links, with no automatic fallback. Use
 `Totipo.create(NioTotipoStore.openPrivate(root), password)` or the corresponding
 `Totipo.open` call; normal store ownership rules apply.
@@ -175,14 +178,15 @@ metadata changes. Normal builds do not regenerate specification vectors.
 
 ## Maven consumption
 
-The Maven coordinates for Java implementation version **0.1.1** are shown below.
+The Maven coordinates for published Java implementation version **0.1.3** are
+shown below.
 Maven Central is the binary distribution channel; the manually dispatched
 [Release workflow](.github/workflows/release.yml) validates, signs, publishes and
 verifies each release before creating its source tag and GitHub release.
 Applications consuming that version use Maven Central and:
 
 ```kotlin
-implementation("org.totipo:totipo-storage-nio:0.1.1")
+implementation("org.totipo:totipo-storage-nio:0.1.3")
 ```
 
 `totipo-storage-nio` is the normal filesystem/NIO entry point and provider. It
@@ -192,7 +196,7 @@ unchanged. For portable protocol/application API and core implementation without
 an NIO provider:
 
 ```kotlin
-implementation("org.totipo:totipo-core:0.1.1")
+implementation("org.totipo:totipo-core:0.1.3")
 ```
 
 Core brings Bouncy Castle 1.86 at runtime for Argon2id, without exposing BC as a
@@ -201,11 +205,13 @@ and the specification snapshot are excluded from publications.
 
 `VERSION` is the single implementation version source. Protocol compatibility is
 separate: this worktree targets v1/r18, aligned from the prior v1/r17 pin without
-portable behavior changes. `VERSION` is prepared as 0.1.3, retaining the additive
-`MergeToken.keep(TokenAlternative)` API and fixing version-specific release notes
-validation. The consumption examples above describe 0.1.1; 0.1.3 is pending its
-separately reviewed release. See [the 0.1.3 preparation report](review/V0_1_3_RELEASE_PREPARATION_REPORT.md)
-and [the whole-Alternative review](review/WHOLE_ALTERNATIVE_KEEP_REPORT.md).
+portable behavior changes. `VERSION` is prepared as **0.1.4**, adding the explicit
+private/exclusive-local NIO mode for separately controlled local replicas. The
+consumption examples above describe published 0.1.3; 0.1.4 is under local review
+and has not been released. Physical Android requalification remains a separate
+follow-up; the new mode does not establish Android filesystem or crash safety.
+See [the 0.1.4 preparation report](review/V0_1_4_RELEASE_PREPARATION_REPORT.md)
+and [draft release notes](review/V0_1_4_RELEASE_NOTES.md).
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
 credential-free validation and the protected release-environment approval gate.

@@ -65,14 +65,17 @@ may pass `NioTotipoStore.openPrivate(root)` (or its `StorageDurability` overload
 to `Totipo.open/create`. This opt-in selects complete-stage ordinary moves for
 new objects and initial VAULT installation, without replacement options. The
 application must exclude independent ordinary writers and direct synchronization
-software, and serialize all operations across every handle/session for the root.
+software, and serialize all writers, handle/session calls and bridge operations
+for the root.
 Core's provider gate coordinates only one session. Remote bytes must enter through
 a separately controlled reconciliation bridge. The factory does not enforce root
 exclusivity. It retains persistence acknowledgement and conservative uncertainty,
 but supplies no atomic no-replace guarantee against concurrent writers.
 Existing `NioTotipo` and `NioTotipoStore.open` callers retain shared-store hard links.
 The private store transfers ownership in exactly the same way as any TotipoStore.
-It is inappropriate for directly synchronized/shared vault directories.
+Directly synchronized/shared vault directories should continue using shared mode
+unless separately qualified. Private mode is not an automatic fallback for
+unavailable hard links.
 
 `VaultSession` is the live capability. It owns the root, decrypted TOKEN values,
 configured-store resources, retained history references, builders and observation

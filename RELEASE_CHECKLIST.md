@@ -1,15 +1,15 @@
-# Totipo Java 0.1.3 release checklist
+# Totipo Java 0.1.4 release checklist
 
-The worktree prepares 0.1.3, retaining the whole-Alternative API introduced in
-0.1.2 and fixing version-specific release notes validation. The implementation
-version comes from `VERSION`; protocol compatibility is independent. The protocol
+The worktree prepares 0.1.4, adding explicit private/exclusive-local NIO opening
+for separately controlled local replicas while retaining shared-store behavior.
+The implementation version comes from `VERSION`; protocol compatibility is independent. The protocol
 remains Totipo Vault Format v1/r18. Specification revisions do not mechanically
 determine the Java semantic version.
 
 Release provenance:
 
-- Maven coordinates: `org.totipo:totipo-core:0.1.3` and
-  `org.totipo:totipo-storage-nio:0.1.3`.
+- Maven coordinates: `org.totipo:totipo-core:0.1.4` and
+  `org.totipo:totipo-storage-nio:0.1.4`.
 - Protocol: v1/r18, specification commit
   `4623a7e1718e23504903096c92332597057bd8f0`; authoritative hashes in `SPEC_PIN.md`.
 - Conformance: protocol-foundation core operations, audited facade TOKEN projections
@@ -22,7 +22,7 @@ Release provenance:
 - Portable corpus: 90/90, none deferred; reconfirmed on the exact release commit.
 - Java source commit: the operator enters the full reviewed SHA at dispatch. The
   workflow appends it to the GitHub release body, leaving committed reviewed notes
-  unchanged. Annotated source tag convention: `v0.1.3`, matching unsigned `v0.1.0`.
+  unchanged. Annotated source tag convention: `v0.1.4`, matching unsigned `v0.1.0`.
 - Java 17 production bytecode; builds use pinned Gradle 9.8.0 and JDK 25.
 - Qualification limits in README still apply; no new desktop, Android, provider,
   independent interoperability, or security-audit claim follows from publication.
@@ -53,7 +53,7 @@ preflight (no release secrets)
   credentials, and a Central-compatible signing key/public-key distribution.
 - [ ] Complete the one-time environment setup below.
 - [ ] In Actions → **Release** → **Run workflow**, select **main** and enter:
-  - `version`: `0.1.3`, exactly matching `VERSION`.
+  - `version`: `0.1.4`, exactly matching `VERSION`.
   - `commit`: the full **40 lowercase hexadecimal characters** of the reviewed
     current `main` commit. Abbreviated SHAs are rejected.
 - [ ] Review preflight evidence; approve deployment to **release** when prompted.
@@ -127,7 +127,7 @@ git status --short
 ```
 
 - [ ] Full normal and forced offline suites have zero failures/errors/skips.
-  Current evidence is 478 tests (363 core + 115 NIO); the total is recorded,
+  Current evidence is 524 tests (378 core + 146 NIO); the total is recorded,
   not used as the sole acceptance criterion. Explicit executed-set corpus
   accounting proves **90/90**; integrity is **3/3 snapshot + 1/1 profile** and
   **97/97** snapshot records validate.

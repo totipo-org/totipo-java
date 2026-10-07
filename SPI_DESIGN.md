@@ -187,12 +187,13 @@ adapters retain hard links. A link failure never selects private mode automatica
 The root must be controlled exclusively by the application, with no independent
 ordinary writer and no synchronization software directly changing its directory.
 Remote/provider bytes are reconciled through a separate application-controlled
-bridge. All calls across handles/sessions using the root must be serialized by the
-application; the existing core gate serializes only one session. Opening does not
+bridge. All writers, handle/session calls and bridge operations for the root must
+be serialized by the application; the existing core gate serializes only one
+session. Opening does not
 verify or enforce these assumptions. Same-privilege malicious races remain outside
 baseline r18; accidental concurrent application writers violate the private-mode
-configuration as well. This mode is inappropriate for directly synchronized/shared
-vault directories.
+configuration as well. Directly synchronized/shared vault directories should
+continue using shared mode unless separately qualified.
 
 Private publication completes and forces a noncanonical stage, closes its channel,
 freshly checks exact target absence, and calls `Files.move` without any options.
