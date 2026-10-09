@@ -1,0 +1,614 @@
+--- Central 0.1.5
++++ Prepared 0.2.0
+@@ -129,6 +129,9 @@
+ 
+ Compiled from "CreateVaultResult.java"
+ public final class org.totipo.CreateVaultResult$Failed extends java.lang.Record implements org.totipo.CreateVaultResult {
++  public org.totipo.CreateVaultResult$Failed(org.totipo.CreateVaultResult$FailureReason);
++    descriptor: (Lorg/totipo/CreateVaultResult$FailureReason;)V
++
+   public org.totipo.CreateVaultResult$Failed();
+     descriptor: ()V
+ 
+@@ -140,6 +143,22 @@
+ 
+   public final boolean equals(java.lang.Object);
+     descriptor: (Ljava/lang/Object;)Z
++
++  public org.totipo.CreateVaultResult$FailureReason reason();
++    descriptor: ()Lorg/totipo/CreateVaultResult$FailureReason;
++}
++
++Compiled from "CreateVaultResult.java"
++public final class org.totipo.CreateVaultResult$FailureReason extends java.lang.Enum<org.totipo.CreateVaultResult$FailureReason> {
++  public static final org.totipo.CreateVaultResult$FailureReason STORAGE;
++    descriptor: Lorg/totipo/CreateVaultResult$FailureReason;
++  public static final org.totipo.CreateVaultResult$FailureReason OBJECT_DATA_OBSERVED;
++    descriptor: Lorg/totipo/CreateVaultResult$FailureReason;
++  public static org.totipo.CreateVaultResult$FailureReason[] values();
++    descriptor: ()[Lorg/totipo/CreateVaultResult$FailureReason;
++
++  public static org.totipo.CreateVaultResult$FailureReason valueOf(java.lang.String);
++    descriptor: (Ljava/lang/String;)Lorg/totipo/CreateVaultResult$FailureReason;
+ }
+ 
+ Compiled from "CreateVaultResult.java"
+@@ -393,25 +412,6 @@
+ 
+ Compiled from "PartialSaveResult.java"
+ public interface org.totipo.PartialSaveResult extends org.totipo.SaveResult {
+-}
+-
+-Compiled from "PasswordChangeResult.java"
+-public final class org.totipo.PasswordChangeResult extends java.lang.Enum<org.totipo.PasswordChangeResult> {
+-  public static final org.totipo.PasswordChangeResult CHANGED;
+-    descriptor: Lorg/totipo/PasswordChangeResult;
+-  public static final org.totipo.PasswordChangeResult AUTHENTICATION_FAILED;
+-    descriptor: Lorg/totipo/PasswordChangeResult;
+-  public static final org.totipo.PasswordChangeResult STALE;
+-    descriptor: Lorg/totipo/PasswordChangeResult;
+-  public static final org.totipo.PasswordChangeResult FAILED;
+-    descriptor: Lorg/totipo/PasswordChangeResult;
+-  public static final org.totipo.PasswordChangeResult UNCERTAIN;
+-    descriptor: Lorg/totipo/PasswordChangeResult;
+-  public static org.totipo.PasswordChangeResult[] values();
+-    descriptor: ()[Lorg/totipo/PasswordChangeResult;
+-
+-  public static org.totipo.PasswordChangeResult valueOf(java.lang.String);
+-    descriptor: (Ljava/lang/String;)Lorg/totipo/PasswordChangeResult;
+ }
+ 
+ Compiled from "PublicationRetry.java"
+@@ -745,6 +745,9 @@
+ 
+ Compiled from "Totipo.java"
+ public final class org.totipo.Totipo {
++  public static org.totipo.VaultId vaultId(byte[]);
++    descriptor: ([B)Lorg/totipo/VaultId;
++
+   public static org.totipo.OpenResult open(org.totipo.spi.TotipoStore, char[]);
+     descriptor: (Lorg/totipo/spi/TotipoStore;[C)Lorg/totipo/OpenResult;
+ 
+@@ -834,28 +837,31 @@
+     descriptor: ()Ljava/lang/String;
+ }
+ 
+-Compiled from "VaultFingerprint.java"
+-public final class org.totipo.VaultFingerprint extends java.lang.Record {
+-  public org.totipo.VaultFingerprint(java.lang.String);
+-    descriptor: (Ljava/lang/String;)V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
++Compiled from "VaultId.java"
++public final class org.totipo.VaultId {
++  public org.totipo.VaultId(byte[]);
++    descriptor: ([B)V
++
++  public byte[] bytes();
++    descriptor: ()[B
+ 
+   public java.lang.String hex();
++    descriptor: ()Ljava/lang/String;
++
++  public boolean equals(java.lang.Object);
++    descriptor: (Ljava/lang/Object;)Z
++
++  public int hashCode();
++    descriptor: ()I
++
++  public java.lang.String toString();
+     descriptor: ()Ljava/lang/String;
+ }
+ 
+ Compiled from "VaultSession.java"
+ public interface org.totipo.VaultSession extends java.lang.AutoCloseable {
+-  public abstract org.totipo.VaultFingerprint fingerprint();
+-    descriptor: ()Lorg/totipo/VaultFingerprint;
++  public abstract org.totipo.VaultId vaultId();
++    descriptor: ()Lorg/totipo/VaultId;
+ 
+   public abstract org.totipo.VaultState state();
+     descriptor: ()Lorg/totipo/VaultState;
+@@ -865,9 +871,6 @@
+ 
+   public abstract void requestRefresh();
+     descriptor: ()V
+-
+-  public abstract org.totipo.PasswordChangeResult changePassword(char[], char[]);
+-    descriptor: ([C[C)Lorg/totipo/PasswordChangeResult;
+ 
+   public default org.totipo.ObjectCandidateValidation validateObject(org.totipo.RevisionId, byte[]);
+     descriptor: (Lorg/totipo/RevisionId;[B)Lorg/totipo/ObjectCandidateValidation;
+@@ -909,87 +912,6 @@
+     descriptor: (Lorg/totipo/TokenAlternative;Ljava/time/Instant;)Lorg/totipo/TotpCode;
+ }
+ 
+-Compiled from "ApplicationVaults.java"
+-public final class org.totipo.format.ApplicationVaults {
+-  public static org.totipo.OpenResult open(org.totipo.spi.TotipoStore, char[]);
+-    descriptor: (Lorg/totipo/spi/TotipoStore;[C)Lorg/totipo/OpenResult;
+-
+-  public static org.totipo.CreateVaultResult create(org.totipo.spi.TotipoStore, char[]);
+-    descriptor: (Lorg/totipo/spi/TotipoStore;[C)Lorg/totipo/CreateVaultResult;
+-
+-  public static org.totipo.OpenResult open(org.totipo.format.VaultBootstrapReplacementStorage, org.totipo.format.DiscoverySource, org.totipo.format.V1ObjectPublicationStore, char[]);
+-    descriptor: (Lorg/totipo/format/VaultBootstrapReplacementStorage;Lorg/totipo/format/DiscoverySource;Lorg/totipo/format/V1ObjectPublicationStore;[C)Lorg/totipo/OpenResult;
+-
+-  public static org.totipo.CreateVaultResult create(org.totipo.format.VaultBootstrapReplacementStorage, org.totipo.format.DiscoverySource, org.totipo.format.V1ObjectPublicationStore, char[]);
+-    descriptor: (Lorg/totipo/format/VaultBootstrapReplacementStorage;Lorg/totipo/format/DiscoverySource;Lorg/totipo/format/V1ObjectPublicationStore;[C)Lorg/totipo/CreateVaultResult;
+-}
+-
+-Compiled from "DiscoverySource.java"
+-public interface org.totipo.format.DiscoverySource {
+-  public abstract org.totipo.format.DiscoverySource$Snapshot snapshot() throws java.io.IOException;
+-    descriptor: ()Lorg/totipo/format/DiscoverySource$Snapshot;
+-}
+-
+-Compiled from "DiscoverySource.java"
+-public final class org.totipo.format.DiscoverySource$Candidate extends java.lang.Record {
+-  public org.totipo.format.DiscoverySource$Candidate(org.totipo.format.ObjectId, org.totipo.format.DiscoverySource$Opener);
+-    descriptor: (Lorg/totipo/format/ObjectId;Lorg/totipo/format/DiscoverySource$Opener;)V
+-
+-  public java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public org.totipo.format.ObjectId id();
+-    descriptor: ()Lorg/totipo/format/ObjectId;
+-
+-  public org.totipo.format.DiscoverySource$Opener opener();
+-    descriptor: ()Lorg/totipo/format/DiscoverySource$Opener;
+-}
+-
+-Compiled from "DiscoverySource.java"
+-public interface org.totipo.format.DiscoverySource$Opener {
+-  public abstract java.nio.channels.ReadableByteChannel open() throws java.io.IOException;
+-    descriptor: ()Ljava/nio/channels/ReadableByteChannel;
+-}
+-
+-Compiled from "DiscoverySource.java"
+-public final class org.totipo.format.DiscoverySource$Snapshot implements java.io.Closeable {
+-  public org.totipo.format.DiscoverySource$Snapshot(java.util.List<org.totipo.format.DiscoverySource$Candidate>, org.totipo.format.DiscoverySource$SnapshotIssue);
+-    descriptor: (Ljava/util/List;Lorg/totipo/format/DiscoverySource$SnapshotIssue;)V
+-
+-  public org.totipo.format.DiscoverySource$Snapshot(java.util.List<org.totipo.format.DiscoverySource$Candidate>, org.totipo.format.DiscoverySource$SnapshotIssue, java.io.Closeable);
+-    descriptor: (Ljava/util/List;Lorg/totipo/format/DiscoverySource$SnapshotIssue;Ljava/io/Closeable;)V
+-
+-  public java.util.List<org.totipo.format.DiscoverySource$Candidate> candidates();
+-    descriptor: ()Ljava/util/List;
+-
+-  public org.totipo.format.DiscoverySource$SnapshotIssue issue();
+-    descriptor: ()Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-
+-  public void close() throws java.io.IOException;
+-    descriptor: ()V
+-}
+-
+-Compiled from "DiscoverySource.java"
+-public final class org.totipo.format.DiscoverySource$SnapshotIssue extends java.lang.Enum<org.totipo.format.DiscoverySource$SnapshotIssue> {
+-  public static final org.totipo.format.DiscoverySource$SnapshotIssue NONE;
+-    descriptor: Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-  public static final org.totipo.format.DiscoverySource$SnapshotIssue ENUMERATION_UNAVAILABLE;
+-    descriptor: Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-  public static final org.totipo.format.DiscoverySource$SnapshotIssue UNSAFE_NAMESPACE;
+-    descriptor: Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-  public static org.totipo.format.DiscoverySource$SnapshotIssue[] values();
+-    descriptor: ()[Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-
+-  public static org.totipo.format.DiscoverySource$SnapshotIssue valueOf(java.lang.String);
+-    descriptor: (Ljava/lang/String;)Lorg/totipo/format/DiscoverySource$SnapshotIssue;
+-}
+-
+ Compiled from "EntropySource.java"
+ public final class org.totipo.format.EntropySource$Jdk implements org.totipo.format.EntropySource {
+   public org.totipo.format.EntropySource$Jdk();
+@@ -999,83 +921,16 @@
+     descriptor: ([B)V
+ }
+ 
+-Compiled from "ObjectId.java"
+-public final class org.totipo.format.ObjectId {
+-  public static org.totipo.format.ObjectId fromFilename(java.lang.String);
+-    descriptor: (Ljava/lang/String;)Lorg/totipo/format/ObjectId;
+-
+-  public java.lang.String filename();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public int hashCode();
+-    descriptor: ()I
+-}
+-
+-Compiled from "V1ObjectPublicationStore.java"
+-public interface org.totipo.format.V1ObjectPublicationStore extends java.lang.AutoCloseable {
+-  public abstract org.totipo.format.V1ObjectPublicationStore$PublicationResult publish(org.totipo.format.ObjectId, byte[]) throws java.io.IOException;
+-    descriptor: (Lorg/totipo/format/ObjectId;[B)Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-
+-  public abstract void close() throws java.io.IOException;
+-    descriptor: ()V
+-}
+-
+-Compiled from "V1ObjectPublicationStore.java"
+-public final class org.totipo.format.V1ObjectPublicationStore$PublicationResult extends java.lang.Enum<org.totipo.format.V1ObjectPublicationStore$PublicationResult> {
+-  public static final org.totipo.format.V1ObjectPublicationStore$PublicationResult PUBLISHED_NEW;
+-    descriptor: Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-  public static final org.totipo.format.V1ObjectPublicationStore$PublicationResult ALREADY_PRESENT_EXACT;
+-    descriptor: Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-  public static org.totipo.format.V1ObjectPublicationStore$PublicationResult[] values();
+-    descriptor: ()[Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-
+-  public static org.totipo.format.V1ObjectPublicationStore$PublicationResult valueOf(java.lang.String);
+-    descriptor: (Ljava/lang/String;)Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-}
+-
+-Compiled from "VaultBootstrapReplacementStorage.java"
+-public interface org.totipo.format.VaultBootstrapReplacementStorage extends org.totipo.format.VaultBootstrapStorage {
+-  public abstract org.totipo.format.VaultBootstrapReplacementStorage$StagedReplacement stageReplacement(byte[]) throws java.io.IOException;
+-    descriptor: ([B)Lorg/totipo/format/VaultBootstrapReplacementStorage$StagedReplacement;
+-}
+-
+-Compiled from "VaultBootstrapReplacementStorage.java"
+-public interface org.totipo.format.VaultBootstrapReplacementStorage$StagedReplacement extends java.lang.AutoCloseable {
+-  public abstract java.io.InputStream openRead() throws java.io.IOException;
+-    descriptor: ()Ljava/io/InputStream;
+-
+-  public abstract void replaceCanonicalDurably() throws java.io.IOException;
+-    descriptor: ()V
+-
+-  public abstract void close() throws java.io.IOException;
+-    descriptor: ()V
+-}
+-
+-Compiled from "VaultBootstrapStorage.java"
+-public interface org.totipo.format.VaultBootstrapStorage extends java.lang.AutoCloseable {
+-  public abstract java.io.InputStream openCanonicalRead() throws java.io.IOException;
+-    descriptor: ()Ljava/io/InputStream;
+-
+-  public abstract org.totipo.format.VaultBootstrapStorage$StagedBootstrap stageInitial(byte[]) throws java.io.IOException;
+-    descriptor: ([B)Lorg/totipo/format/VaultBootstrapStorage$StagedBootstrap;
+-
+-  public abstract void close() throws java.io.IOException;
+-    descriptor: ()V
+-}
+-
+-Compiled from "VaultBootstrapStorage.java"
+-public interface org.totipo.format.VaultBootstrapStorage$StagedBootstrap extends java.lang.AutoCloseable {
+-  public abstract java.io.InputStream openRead() throws java.io.IOException;
+-    descriptor: ()Ljava/io/InputStream;
+-
+-  public abstract void installInitialDurably() throws java.io.IOException;
+-    descriptor: ()V
+-
+-  public abstract void close() throws java.io.IOException;
+-    descriptor: ()V
++Compiled from "VaultLifecycle.java"
++public final class org.totipo.format.VaultLifecycle {
++  public static org.totipo.VaultId vaultId(byte[]);
++    descriptor: ([B)Lorg/totipo/VaultId;
++
++  public static org.totipo.OpenResult openSession(org.totipo.spi.TotipoStore, char[]);
++    descriptor: (Lorg/totipo/spi/TotipoStore;[C)Lorg/totipo/OpenResult;
++
++  public static org.totipo.CreateVaultResult createSession(org.totipo.spi.TotipoStore, char[]);
++    descriptor: (Lorg/totipo/spi/TotipoStore;[C)Lorg/totipo/CreateVaultResult;
+ }
+ 
+ Compiled from "BoundedRead.java"
+@@ -1375,21 +1230,6 @@
+     descriptor: (Ljava/lang/Object;)Z
+ }
+ 
+-Compiled from "PreparedVault.java"
+-public interface org.totipo.spi.PreparedVault extends java.lang.AutoCloseable {
+-  public abstract org.totipo.spi.BoundedRead readBack(int);
+-    descriptor: (I)Lorg/totipo/spi/BoundedRead;
+-
+-  public abstract org.totipo.spi.VaultInstall installCanonicalIfAbsent();
+-    descriptor: ()Lorg/totipo/spi/VaultInstall;
+-
+-  public abstract org.totipo.spi.VaultReplace replaceCanonical();
+-    descriptor: ()Lorg/totipo/spi/VaultReplace;
+-
+-  public abstract void close();
+-    descriptor: ()V
+-}
+-
+ Compiled from "StoreFailure.java"
+ public final class org.totipo.spi.StoreFailure extends java.lang.Enum<org.totipo.spi.StoreFailure> {
+   public static final org.totipo.spi.StoreFailure UNAVAILABLE;
+@@ -1419,35 +1259,50 @@
+   public abstract org.totipo.spi.ObjectWrite publishObject(org.totipo.spi.ObjectName, byte[]);
+     descriptor: (Lorg/totipo/spi/ObjectName;[B)Lorg/totipo/spi/ObjectWrite;
+ 
+-  public abstract org.totipo.spi.VaultPrepare prepareVault(byte[]);
+-    descriptor: ([B)Lorg/totipo/spi/VaultPrepare;
++  public abstract org.totipo.spi.VaultCreate createVault(byte[]);
++    descriptor: ([B)Lorg/totipo/spi/VaultCreate;
+ 
+   public abstract void close();
+     descriptor: ()V
+ }
+ 
+-Compiled from "VaultInstall.java"
+-public interface org.totipo.spi.VaultInstall {
+-}
+-
+-Compiled from "VaultInstall.java"
+-public final class org.totipo.spi.VaultInstall$AlreadyPresent extends java.lang.Record implements org.totipo.spi.VaultInstall {
+-  public org.totipo.spi.VaultInstall$AlreadyPresent();
+-    descriptor: ()V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-}
+-
+-Compiled from "VaultInstall.java"
+-public final class org.totipo.spi.VaultInstall$Failed extends java.lang.Record implements org.totipo.spi.VaultInstall {
+-  public org.totipo.spi.VaultInstall$Failed(org.totipo.spi.StoreFailure);
++Compiled from "VaultCreate.java"
++public interface org.totipo.spi.VaultCreate {
++}
++
++Compiled from "VaultCreate.java"
++public final class org.totipo.spi.VaultCreate$AlreadyPresent extends java.lang.Record implements org.totipo.spi.VaultCreate {
++  public org.totipo.spi.VaultCreate$AlreadyPresent();
++    descriptor: ()V
++
++  public final java.lang.String toString();
++    descriptor: ()Ljava/lang/String;
++
++  public final int hashCode();
++    descriptor: ()I
++
++  public final boolean equals(java.lang.Object);
++    descriptor: (Ljava/lang/Object;)Z
++}
++
++Compiled from "VaultCreate.java"
++public final class org.totipo.spi.VaultCreate$Created extends java.lang.Record implements org.totipo.spi.VaultCreate {
++  public org.totipo.spi.VaultCreate$Created();
++    descriptor: ()V
++
++  public final java.lang.String toString();
++    descriptor: ()Ljava/lang/String;
++
++  public final int hashCode();
++    descriptor: ()I
++
++  public final boolean equals(java.lang.Object);
++    descriptor: (Ljava/lang/Object;)Z
++}
++
++Compiled from "VaultCreate.java"
++public final class org.totipo.spi.VaultCreate$Failed extends java.lang.Record implements org.totipo.spi.VaultCreate {
++  public org.totipo.spi.VaultCreate$Failed(org.totipo.spi.StoreFailure);
+     descriptor: (Lorg/totipo/spi/StoreFailure;)V
+ 
+   public final java.lang.String toString();
+@@ -1463,24 +1318,9 @@
+     descriptor: ()Lorg/totipo/spi/StoreFailure;
+ }
+ 
+-Compiled from "VaultInstall.java"
+-public final class org.totipo.spi.VaultInstall$Installed extends java.lang.Record implements org.totipo.spi.VaultInstall {
+-  public org.totipo.spi.VaultInstall$Installed();
+-    descriptor: ()V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-}
+-
+-Compiled from "VaultInstall.java"
+-public final class org.totipo.spi.VaultInstall$Uncertain extends java.lang.Record implements org.totipo.spi.VaultInstall {
+-  public org.totipo.spi.VaultInstall$Uncertain(org.totipo.spi.StoreFailure);
++Compiled from "VaultCreate.java"
++public final class org.totipo.spi.VaultCreate$Uncertain extends java.lang.Record implements org.totipo.spi.VaultCreate {
++  public org.totipo.spi.VaultCreate$Uncertain(org.totipo.spi.StoreFailure);
+     descriptor: (Lorg/totipo/spi/StoreFailure;)V
+ 
+   public final java.lang.String toString();
+@@ -1496,111 +1336,7 @@
+     descriptor: ()Lorg/totipo/spi/StoreFailure;
+ }
+ 
+-Compiled from "VaultPrepare.java"
+-public interface org.totipo.spi.VaultPrepare {
+-}
+-
+-Compiled from "VaultPrepare.java"
+-public final class org.totipo.spi.VaultPrepare$Failed extends java.lang.Record implements org.totipo.spi.VaultPrepare {
+-  public org.totipo.spi.VaultPrepare$Failed(org.totipo.spi.StoreFailure);
+-    descriptor: (Lorg/totipo/spi/StoreFailure;)V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public org.totipo.spi.StoreFailure reason();
+-    descriptor: ()Lorg/totipo/spi/StoreFailure;
+-}
+-
+-Compiled from "VaultPrepare.java"
+-public final class org.totipo.spi.VaultPrepare$Prepared extends java.lang.Record implements org.totipo.spi.VaultPrepare {
+-  public org.totipo.spi.VaultPrepare$Prepared(org.totipo.spi.PreparedVault);
+-    descriptor: (Lorg/totipo/spi/PreparedVault;)V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public org.totipo.spi.PreparedVault vault();
+-    descriptor: ()Lorg/totipo/spi/PreparedVault;
+-}
+-
+-Compiled from "VaultReplace.java"
+-public interface org.totipo.spi.VaultReplace {
+-}
+-
+-Compiled from "VaultReplace.java"
+-public final class org.totipo.spi.VaultReplace$Failed extends java.lang.Record implements org.totipo.spi.VaultReplace {
+-  public org.totipo.spi.VaultReplace$Failed(org.totipo.spi.StoreFailure);
+-    descriptor: (Lorg/totipo/spi/StoreFailure;)V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public org.totipo.spi.StoreFailure reason();
+-    descriptor: ()Lorg/totipo/spi/StoreFailure;
+-}
+-
+-Compiled from "VaultReplace.java"
+-public final class org.totipo.spi.VaultReplace$Replaced extends java.lang.Record implements org.totipo.spi.VaultReplace {
+-  public org.totipo.spi.VaultReplace$Replaced();
+-    descriptor: ()V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-}
+-
+-Compiled from "VaultReplace.java"
+-public final class org.totipo.spi.VaultReplace$Uncertain extends java.lang.Record implements org.totipo.spi.VaultReplace {
+-  public org.totipo.spi.VaultReplace$Uncertain(org.totipo.spi.StoreFailure);
+-    descriptor: (Lorg/totipo/spi/StoreFailure;)V
+-
+-  public final java.lang.String toString();
+-    descriptor: ()Ljava/lang/String;
+-
+-  public final int hashCode();
+-    descriptor: ()I
+-
+-  public final boolean equals(java.lang.Object);
+-    descriptor: (Ljava/lang/Object;)Z
+-
+-  public org.totipo.spi.StoreFailure reason();
+-    descriptor: ()Lorg/totipo/spi/StoreFailure;
+-}
+-
+ # storage-nio
+-Compiled from "NioDiscoverySource.java"
+-public final class org.totipo.storage.nio.NioDiscoverySource implements org.totipo.format.DiscoverySource {
+-  public org.totipo.storage.nio.NioDiscoverySource(java.nio.file.Path);
+-    descriptor: (Ljava/nio/file/Path;)V
+-
+-  public org.totipo.format.DiscoverySource$Snapshot snapshot() throws java.io.IOException;
+-    descriptor: ()Lorg/totipo/format/DiscoverySource$Snapshot;
+-}
+-
+ Compiled from "NioDurability.java"
+ public final class org.totipo.storage.nio.NioDurability implements org.totipo.storage.nio.StorageDurability {
+   public org.totipo.storage.nio.NioDurability();
+@@ -1608,6 +1344,12 @@
+ 
+   public void syncDirectory(java.nio.file.Path) throws java.io.IOException;
+     descriptor: (Ljava/nio/file/Path;)V
++}
++
++Compiled from "NioStoreComposition.java"
++public final class org.totipo.storage.nio.NioStoreComposition {
++  public static org.totipo.spi.TotipoStore coordinatedDelegate(java.nio.file.Path, org.totipo.storage.nio.StorageDurability) throws java.io.IOException;
++    descriptor: (Ljava/nio/file/Path;Lorg/totipo/storage/nio/StorageDurability;)Lorg/totipo/spi/TotipoStore;
+ }
+ 
+ Compiled from "NioTotipo.java"
+@@ -1627,12 +1369,6 @@
+   public static org.totipo.storage.nio.NioTotipoStore open(java.nio.file.Path, org.totipo.storage.nio.StorageDurability) throws java.io.IOException;
+     descriptor: (Ljava/nio/file/Path;Lorg/totipo/storage/nio/StorageDurability;)Lorg/totipo/storage/nio/NioTotipoStore;
+ 
+-  public static org.totipo.storage.nio.NioTotipoStore openPrivate(java.nio.file.Path) throws java.io.IOException;
+-    descriptor: (Ljava/nio/file/Path;)Lorg/totipo/storage/nio/NioTotipoStore;
+-
+-  public static org.totipo.storage.nio.NioTotipoStore openPrivate(java.nio.file.Path, org.totipo.storage.nio.StorageDurability) throws java.io.IOException;
+-    descriptor: (Ljava/nio/file/Path;Lorg/totipo/storage/nio/StorageDurability;)Lorg/totipo/storage/nio/NioTotipoStore;
+-
+   public org.totipo.spi.BoundedRead readVault(int);
+     descriptor: (I)Lorg/totipo/spi/BoundedRead;
+ 
+@@ -1645,38 +1381,8 @@
+   public org.totipo.spi.ObjectWrite publishObject(org.totipo.spi.ObjectName, byte[]);
+     descriptor: (Lorg/totipo/spi/ObjectName;[B)Lorg/totipo/spi/ObjectWrite;
+ 
+-  public org.totipo.spi.VaultPrepare prepareVault(byte[]);
+-    descriptor: ([B)Lorg/totipo/spi/VaultPrepare;
+-
+-  public void close();
+-    descriptor: ()V
+-}
+-
+-Compiled from "NioV1ObjectPublicationStore.java"
+-public final class org.totipo.storage.nio.NioV1ObjectPublicationStore implements org.totipo.format.V1ObjectPublicationStore {
+-  public static org.totipo.storage.nio.NioV1ObjectPublicationStore open(java.nio.file.Path, org.totipo.storage.nio.StorageDurability) throws java.io.IOException;
+-    descriptor: (Ljava/nio/file/Path;Lorg/totipo/storage/nio/StorageDurability;)Lorg/totipo/storage/nio/NioV1ObjectPublicationStore;
+-
+-  public org.totipo.format.V1ObjectPublicationStore$PublicationResult publish(org.totipo.format.ObjectId, byte[]) throws java.io.IOException;
+-    descriptor: (Lorg/totipo/format/ObjectId;[B)Lorg/totipo/format/V1ObjectPublicationStore$PublicationResult;
+-
+-  public void close();
+-    descriptor: ()V
+-}
+-
+-Compiled from "NioVaultBootstrapStorage.java"
+-public final class org.totipo.storage.nio.NioVaultBootstrapStorage implements org.totipo.format.VaultBootstrapReplacementStorage {
+-  public static org.totipo.storage.nio.NioVaultBootstrapStorage open(java.nio.file.Path, org.totipo.storage.nio.StorageDurability) throws java.io.IOException;
+-    descriptor: (Ljava/nio/file/Path;Lorg/totipo/storage/nio/StorageDurability;)Lorg/totipo/storage/nio/NioVaultBootstrapStorage;
+-
+-  public java.io.InputStream openCanonicalRead() throws java.io.IOException;
+-    descriptor: ()Ljava/io/InputStream;
+-
+-  public org.totipo.format.VaultBootstrapStorage$StagedBootstrap stageInitial(byte[]) throws java.io.IOException;
+-    descriptor: ([B)Lorg/totipo/format/VaultBootstrapStorage$StagedBootstrap;
+-
+-  public org.totipo.format.VaultBootstrapReplacementStorage$StagedReplacement stageReplacement(byte[]) throws java.io.IOException;
+-    descriptor: ([B)Lorg/totipo/format/VaultBootstrapReplacementStorage$StagedReplacement;
++  public org.totipo.spi.VaultCreate createVault(byte[]);
++    descriptor: ([B)Lorg/totipo/spi/VaultCreate;
+ 
+   public void close();
+     descriptor: ()V

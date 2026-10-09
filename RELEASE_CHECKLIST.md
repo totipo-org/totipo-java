@@ -1,7 +1,8 @@
-# Totipo Java 0.1.5 release checklist
+# Totipo Java 0.2.0 release checklist
 
-VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose
-and review a new release version and matching notes before using this checklist.
+<!-- prepared-release:start -->
+Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+<!-- prepared-release:end -->
 Independent immutable object-candidate validation remains available.
 The implementation version comes from `VERSION`; protocol compatibility is independent. The protocol
 remains Totipo Vault Format v1/r19. Specification revisions do not mechanically
@@ -9,8 +10,8 @@ determine the Java semantic version.
 
 Release provenance:
 
-- Maven coordinates: `org.totipo:totipo-core:0.1.5` and
-  `org.totipo:totipo-storage-nio:0.1.5`.
+- Maven coordinates: `org.totipo:totipo-core:0.2.0` and
+  `org.totipo:totipo-storage-nio:0.2.0`.
 - Protocol: v1/r19, specification commit
   `cdb4e91be1c6d3704874b2b92457ffe7be5e9084`; authoritative hashes in `SPEC_PIN.md`.
 - Conformance: protocol-foundation core operations, audited facade TOKEN projections
@@ -23,10 +24,52 @@ Release provenance:
 - Portable corpus: 92/92, none deferred; reconfirmed on the exact release commit.
 - Java source commit: the operator enters the full reviewed SHA at dispatch. The
   workflow appends it to the GitHub release body, leaving committed reviewed notes
-  unchanged. Annotated source tag convention: `v0.1.5`, matching unsigned `v0.1.0`.
+  unchanged. Annotated source tag convention: `v0.2.0`, matching unsigned `v0.1.0`.
 - Java 17 production bytecode; builds use pinned Gradle 9.8.0 and JDK 25.
 - Qualification limits in README still apply; no new desktop, Android, provider,
   independent interoperability, or security-audit claim follows from publication.
+
+## Source preparation and local review
+
+The normal first step, from clean `main`, is:
+
+```sh
+python3 -B publishing/release.py prepare <version> --dry-run
+python3 -B publishing/release.py prepare <version>
+```
+
+`prepare` only edits/validates local release source. It never publishes, tags,
+pushes, signs or dispatches release workflows. It needs no credentials and runs
+no builds. Stable versions must advance; equal/older versions are rejected.
+It validates exact r19 pin/snapshot integrity and known metadata layouts before
+writing VERSION, this checklist, the workflow input example, the two consumer
+self-lock entries, README/API prepared-status blocks, and a version-specific notes
+skeleton if missing. Historical notes/reports and published examples are untouched.
+Review all edited paths, finish the generated notes, then run:
+
+```sh
+python3 -B publishing/release.py prepare <version> --check
+```
+
+This repeatable check permits the preparation diff and writes nothing. It checks
+consistent source metadata and reviewed-note structure, not qualification results.
+A second mutating prepare rejects an equal version; use `--check` for idempotent
+validation. The one-time legacy 0.1.5 status conversion is explicitly bounded.
+
+Follow these separate gates in order:
+
+1. Source preparation and breaking API review against canonical Central 0.1.5.
+2. Full local credential-free qualification below; retain the normal inventory
+   outside build outputs before forced offline rebuilding.
+3. Human `nix flake check`. The current 0.1.5 practice requires this alone; no
+   additional full Nix-shell Gradle gate is introduced.
+4. Human review, release-source commit and review through the usual process.
+5. Release-source CI, separately from implementation-commit CI; require success.
+6. Explicitly authorized protected release dispatch and environment approval.
+
+0.2.0 intentionally breaks the 0.1.x experimental source/binary API. Review
+the version-specific release notes and exact API inventories;
+compatibility with 0.1.5 is not an acceptance criterion.
 
 ## Preferred procedure: protected GitHub Actions workflow
 
@@ -46,7 +89,7 @@ preflight (no release secrets)
   `main` through the repository's usual review process. Keep `main` at that commit
   while releasing; identity checks fail if it moves.
 - [ ] Verify `VERSION`, the exact r19 pin, corpus outcomes and reviewed
-  `review/V0_1_5_RELEASE_NOTES.md`. A future version needs its own reviewed notes
+  `review/V0_2_0_RELEASE_NOTES.md`. A future version needs its own reviewed notes
   matching `review/V<version-with-dots-replaced-by-underscores>_RELEASE_NOTES.md`.
   Identity preflight and the final job both validate the version heading; no
   per-version script/workflow edit is needed.
@@ -54,7 +97,7 @@ preflight (no release secrets)
   credentials, and a Central-compatible signing key/public-key distribution.
 - [ ] Complete the one-time environment setup below.
 - [ ] In Actions → **Release** → **Run workflow**, select **main** and enter:
-  - `version`: `0.1.5`, exactly matching `VERSION`.
+  - `version`: `0.2.0`, exactly matching `VERSION`.
   - `commit`: the full **40 lowercase hexadecimal characters** of the reviewed
     current `main` commit. Abbreviated SHAs are rejected.
 - [ ] Review preflight evidence; approve deployment to **release** when prompted.
@@ -116,12 +159,23 @@ checksum checked and strict dependency verification/locking preserved:
 
 ```sh
 ./gradlew clean test build verifyPublication consumerSmoke
+python3 -B publishing/release.py tests
+python3 -B -m unittest discover -s publishing -p 'test_*.py'
+python3 -B publishing/verify-publication.py
+# Use a directory outside build outputs; preserve exact normal inventory.
+cp build/publication-sha256.json /tmp/totipo-normal-publication-sha256.json
 ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks \
   clean test build verifyPublication consumerSmoke
+python3 -B publishing/release.py tests
+EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-sha256.json)" \
+  REQUESTED_VERSION="$(cat VERSION)" REQUESTED_COMMIT="$(git rev-parse HEAD)" \
+  DISPATCH_REF=refs/heads/main DISPATCH_SHA="$(git rev-parse HEAD)" \
+  python3 -B publishing/release.py compare
 ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ./gradlew :core:test \
   --tests org.totipo.conformance.SpecSnapshotIntegrityTest \
   --tests org.totipo.conformance.R19ProfileIntegrityTest
+python3 -B publishing/release.py focused-tests
 (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
 git diff --check
 git status --short

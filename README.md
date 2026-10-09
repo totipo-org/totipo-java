@@ -129,7 +129,7 @@ no regeneration when dependencies and build configuration are unchanged.
 
 ## Maven consumption
 
-The Maven coordinates for published Java implementation version **0.1.4** are
+The Maven coordinates for published Java implementation version **0.1.5** are
 shown below.
 Maven Central is the binary distribution channel; the manually dispatched
 [Release workflow](.github/workflows/release.yml) validates, signs, publishes and
@@ -137,7 +137,7 @@ verifies each release before creating its source tag and GitHub release.
 Applications consuming that version use Maven Central and:
 
 ```kotlin
-implementation("org.totipo:totipo-storage-nio:0.1.4")
+implementation("org.totipo:totipo-storage-nio:0.1.5")
 ```
 
 `totipo-storage-nio` is the normal filesystem/NIO entry point and provider. It
@@ -147,17 +147,19 @@ unchanged. For portable protocol/application API and core implementation without
 an NIO provider:
 
 ```kotlin
-implementation("org.totipo:totipo-core:0.1.4")
+implementation("org.totipo:totipo-core:0.1.5")
 ```
 
 Core brings Bouncy Castle 1.86 at runtime for Argon2id, without exposing BC as a
 public compile dependency. Both artifacts require Java 17; tests, test fixtures,
 and the specification snapshot are excluded from publications.
 
-`VERSION` is the single implementation version source and remains **0.1.5** for
-this local unreleased implementation. The current v1/r19 change intentionally
-simplifies pre-1.0 APIs and is breaking; the report recommends a separate minor
-release selection. The published 0.1.4 examples above are unchanged. Independent
+<!-- prepared-release:start -->
+Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+<!-- prepared-release:end -->
+
+0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
+Independent
 session object-candidate validation is retained, without import or root export.
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,

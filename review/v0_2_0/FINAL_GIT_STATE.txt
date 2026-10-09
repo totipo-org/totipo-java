@@ -1,0 +1,36 @@
+$ git status --short
+ M .github/workflows/ci.yml
+ M .github/workflows/release.yml
+ M API_DESIGN.md
+ M README.md
+ M RELEASE_CHECKLIST.md
+ M VERSION
+ M publishing/consumer-smoke/gradle.lockfile
+ M publishing/consumer-smoke/src/main/java/ConsumerSmoke.java
+ M publishing/release.py
+?? publishing/test_prepare.py
+?? review/V0_2_0_RELEASE_NOTES.md
+?? review/V0_2_0_RELEASE_PREPARATION_REPORT.md
+?? review/v0_2_0/
+
+$ git diff --stat
+ .github/workflows/ci.yml                           |   2 +-
+ .github/workflows/release.yml                      |   8 +-
+ API_DESIGN.md                                      |   8 +-
+ README.md                                          |  16 +-
+ RELEASE_CHECKLIST.md                               |  70 ++++++++-
+ VERSION                                            |   2 +-
+ publishing/consumer-smoke/gradle.lockfile          |   4 +-
+ .../src/main/java/ConsumerSmoke.java               |  27 ++++
+ publishing/release.py                              | 170 ++++++++++++++++++++-
+ 9 files changed, 278 insertions(+), 29 deletions(-)
+
+$ git diff --check
+
+$ git diff --cached --stat
+
+$ git branch --show-current
+main
+
+$ git rev-parse HEAD
+857b71c666cfeb4a34c109267341916b19370f46

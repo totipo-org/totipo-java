@@ -31,7 +31,7 @@ jobs:
         run: ./gradlew build verifyPublication consumerSmoke
 
       - name: Check release guardrails
-        run: python3 -B -m unittest discover -s publishing -p test_release.py
+        run: python3 -B -m unittest discover -s publishing -p 'test_*.py'
 
       - name: Verify Maven POM-only consumer
         run: ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check

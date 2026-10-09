@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact VERSION to release (for example, 0.1.5)
+        description: Exact VERSION to release (for example, 0.2.0)
         required: true
         type: string
       commit:
@@ -59,7 +59,9 @@ jobs:
       - name: Verify identity, reviewed notes and release absence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 publishing/release.py identity
+        run: |
+          python3 publishing/release.py identity
+          python3 -B publishing/release.py prepare "$REQUESTED_VERSION" --check
       - name: Check immutable Central coordinates
         run: python3 publishing/release.py state
       - name: Set up JDK 25
@@ -71,7 +73,7 @@ jobs:
         run: |
           echo '238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
       - name: Check release guardrail failure paths
-        run: python3 -B -m unittest discover -s publishing -p test_release.py
+        run: python3 -B -m unittest discover -s publishing -p 'test_*.py'
       - name: Full normal and forced offline release gates
         run: |
           ./gradlew clean test build verifyPublication consumerSmoke

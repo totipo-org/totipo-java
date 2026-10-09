@@ -1,0 +1,49 @@
+Canonical 0.1.5 API exactly equals committed BEFORE; prepared 0.2.0 exactly equals committed AFTER
+Removed types:
+org.totipo.PasswordChangeResult
+org.totipo.VaultFingerprint
+org.totipo.format.ApplicationVaults
+org.totipo.format.DiscoverySource
+org.totipo.format.DiscoverySource$Candidate
+org.totipo.format.DiscoverySource$Opener
+org.totipo.format.DiscoverySource$Snapshot
+org.totipo.format.DiscoverySource$SnapshotIssue
+org.totipo.format.ObjectId
+org.totipo.format.V1ObjectPublicationStore
+org.totipo.format.V1ObjectPublicationStore$PublicationResult
+org.totipo.format.VaultBootstrapReplacementStorage
+org.totipo.format.VaultBootstrapReplacementStorage$StagedReplacement
+org.totipo.format.VaultBootstrapStorage
+org.totipo.format.VaultBootstrapStorage$StagedBootstrap
+org.totipo.spi.PreparedVault
+org.totipo.spi.VaultInstall
+org.totipo.spi.VaultInstall$AlreadyPresent
+org.totipo.spi.VaultInstall$Failed
+org.totipo.spi.VaultInstall$Installed
+org.totipo.spi.VaultInstall$Uncertain
+org.totipo.spi.VaultPrepare
+org.totipo.spi.VaultPrepare$Failed
+org.totipo.spi.VaultPrepare$Prepared
+org.totipo.spi.VaultReplace
+org.totipo.spi.VaultReplace$Failed
+org.totipo.spi.VaultReplace$Replaced
+org.totipo.spi.VaultReplace$Uncertain
+org.totipo.storage.nio.NioDiscoverySource
+org.totipo.storage.nio.NioV1ObjectPublicationStore
+org.totipo.storage.nio.NioVaultBootstrapStorage
+Added types:
+org.totipo.CreateVaultResult$FailureReason
+org.totipo.VaultId
+org.totipo.format.VaultLifecycle
+org.totipo.spi.VaultCreate
+org.totipo.spi.VaultCreate$AlreadyPresent
+org.totipo.spi.VaultCreate$Created
+org.totipo.spi.VaultCreate$Failed
+org.totipo.spi.VaultCreate$Uncertain
+org.totipo.storage.nio.NioStoreComposition
+Changed types:
+org.totipo.CreateVaultResult$Failed
+org.totipo.Totipo
+org.totipo.VaultSession
+org.totipo.spi.TotipoStore
+org.totipo.storage.nio.NioTotipoStore

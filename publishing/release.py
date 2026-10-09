@@ -29,11 +29,20 @@ def git(*args, **kwargs):
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True, **kwargs).strip()
 
 
+def validate_version(version):
+    require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", version), "Invalid release version")
+    require(not version.upper().endswith("-SNAPSHOT"), "A release cannot be a SNAPSHOT")
+
+
+def notes_path(version):
+    validate_version(version)
+    return ROOT / "review" / f"V{version.replace('.', '_')}_RELEASE_NOTES.md"
+
+
 def inputs():
     version = os.environ["REQUESTED_VERSION"]
     commit = os.environ["REQUESTED_COMMIT"]
-    require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?", version), "Invalid release version")
-    require(not version.upper().endswith("-SNAPSHOT"), "A release cannot be a SNAPSHOT")
+    validate_version(version)
     require(re.fullmatch(r"[0-9a-f]{40}", commit), "commit must be exactly 40 lowercase hexadecimal characters")
     require(os.environ["DISPATCH_REF"] == "refs/heads/main", "Dispatch must select main")
     require(os.environ["DISPATCH_SHA"] == commit, "Dispatch SHA differs from reviewed commit")
@@ -62,7 +71,7 @@ def release_record(version):
 
 
 def reviewed_notes(version):
-    path = ROOT / "review" / f"V{version.replace('.', '_')}_RELEASE_NOTES.md"
+    path = notes_path(version)
     require(path.is_file(), f"Missing reviewed release notes: {path.relative_to(ROOT)}")
     notes = path.read_text()
     require(notes.startswith(f"## v{version}\n"), "Reviewed release notes do not match requested version")
@@ -263,10 +272,161 @@ def tag_release():
     print("Annotated source tag pushed and GitHub release created after Central verification")
 
 
+# Source preparation deliberately has no route to publication helpers.
+STABLE_VERSION = r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+SNAPSHOT_SHA256 = "8b8a6660923a425bc68d9bcd3843bd4cc35db642c494c4812f510c0fba7f0905"
+NOTES_TEMPLATE = """## v{version}
+
+### Highlights
+
+TODO: Review implementation highlights.
+
+### Compatibility and scope
+
+TODO: Review API delta, protocol identity and qualification limits.
+
+### Validation
+
+TODO: Record local qualification and the separate human Nix checkpoint.
+"""
+
+
+def stable_version(value):
+    validate_version(value)
+    require(re.fullmatch(STABLE_VERSION, value), "Preparation requires canonical stable major.minor.patch")
+    return tuple(map(int, value.split(".")))
+
+
+def source_integrity():
+    require(hashlib.sha256((ROOT / "SPEC_PIN.md").read_bytes()).hexdigest() == SPEC_PIN_SHA256,
+            "Exact reviewed r19 spec pin changed")
+    snapshot = ROOT / "core/src/test/resources/totipo-spec/v1-pre-rc"
+    records = (snapshot / "SNAPSHOT.sha256").read_bytes()
+    require(hashlib.sha256(records).hexdigest() == SNAPSHOT_SHA256, "Exact r19 snapshot inventory changed")
+    lines = records.decode().splitlines()
+    require(len(lines) == 99, "Expected 99 r19 snapshot records")
+    for line in lines:
+        digest, name = line.split("  ", 1)
+        require(hashlib.sha256((snapshot / name).read_bytes()).hexdigest() == digest,
+                f"Snapshot integrity failure: {name}")
+
+
+def replace_once(text, old, new, path):
+    require(text.count(old) == 1, f"Unexpected or ambiguous release metadata in {path}: {old}")
+    return text.replace(old, new)
+
+
+def status_block(text, old, new, legacy, path):
+    start, end = "<!-- prepared-release:start -->", "<!-- prepared-release:end -->"
+    before = f"{start}\nJava {old} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
+    after = f"{start}\nJava {new} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
+    if start in text or end in text:
+        return replace_once(text, before, after, path)
+    require(old == "0.1.5", f"Missing release metadata marker in {path}")
+    return replace_once(text, legacy, after, path)
+
+
+def preparation_plan(current, target):
+    """Known-file edits only. Validate every layout before the caller writes any file."""
+    changes = {"VERSION": target + "\n"}
+    path = "RELEASE_CHECKLIST.md"
+    text = (ROOT / path).read_text()
+    for old, new in [
+        (f"# Totipo Java {current} release checklist", f"# Totipo Java {target} release checklist"),
+        (f"org.totipo:totipo-core:{current}", f"org.totipo:totipo-core:{target}"),
+        (f"org.totipo:totipo-storage-nio:{current}", f"org.totipo:totipo-storage-nio:{target}"),
+        (f"`v{current}`", f"`v{target}`"),
+        (str(notes_path(current).relative_to(ROOT)), str(notes_path(target).relative_to(ROOT))),
+        (f"`version`: `{current}`", f"`version`: `{target}`"),
+    ]:
+        text = replace_once(text, old, new, path)
+    text = status_block(text, current, target,
+        "VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose\nand review a new release version and matching notes before using this checklist.", path)
+    require(current == target or current not in text, f"Ambiguous old-version occurrence in {path}")
+    changes[path] = text
+    path = ".github/workflows/release.yml"
+    text = (ROOT / path).read_text()
+    changes[path] = replace_once(text, f"Exact VERSION to release (for example, {current})",
+                                f"Exact VERSION to release (for example, {target})", path)
+    require(current == target or current not in changes[path], f"Ambiguous old-version occurrence in {path}")
+    path = "publishing/consumer-smoke/gradle.lockfile"
+    text = (ROOT / path).read_text()
+    for module in ("core", "storage-nio"):
+        text = replace_once(text, f"org.totipo:totipo-{module}:{current}=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath",
+                            f"org.totipo:totipo-{module}:{target}=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath", path)
+    require(current == target or current not in text, f"Ambiguous old-version occurrence in {path}")
+    changes[path] = text
+    for path, legacy in {
+        "README.md": "`VERSION` is the single implementation version source and remains **0.1.5** for\nthis local unreleased implementation. The current v1/r19 change intentionally\nsimplifies pre-1.0 APIs and is breaking; the report recommends a separate minor\nrelease selection. The published 0.1.4 examples above are unchanged.",
+        "API_DESIGN.md": "VERSION remains 0.1.5 during this unreleased breaking simplification; release\nversion selection is separate.",
+    }.items():
+        text = (ROOT / path).read_text()
+        changes[path] = status_block(text, current, target, legacy, path)
+        # Versions outside the status block require an explicitly recognized role.
+        outside = re.sub(r"<!-- prepared-release:start -->.*?<!-- prepared-release:end -->", "", changes[path], flags=re.DOTALL)
+        for line in outside.splitlines():
+            if current in line:
+                known = (f"{current} is intentionally source/binary incompatible with the 0.1.x experimental API." in line)
+                if path == "README.md":
+                    known = known or f"published Java implementation version **{current}**" in line or any(
+                        f'implementation("org.totipo:totipo-{module}:{current}")' in line for module in ("core", "storage-nio"))
+                require(known, f"Ambiguous old-version occurrence in {path}: {line}")
+    return changes
+
+
+def prepare(target, dry_run=False, check=False):
+    stable_version(target)
+    version_text = (ROOT / "VERSION").read_text()
+    current = version_text.removesuffix("\n")
+    stable_version(current)
+    require(version_text == current + "\n", "Unexpected current VERSION layout")
+    require(git("branch", "--show-current") == "main", "Preparation requires main")
+    source_integrity()
+    if check:
+        require(not dry_run, "Choose either --check or --dry-run")
+        require(current == target, "VERSION differs from prepared target")
+        plan = preparation_plan(current, target)
+        require(all((ROOT / path).read_text() == text for path, text in plan.items()), "Inconsistent prepared metadata")
+        notes = reviewed_notes(target)
+        require(all(f"### {section}\n" in notes for section in ("Highlights", "Compatibility and scope", "Validation")),
+                "Missing release-note section contract")
+        require("TODO:" not in notes, "Release notes still need review")
+        print(f"Prepared source OK: {target}; exact r19 integrity valid (qualification is separate)")
+        return
+    require(stable_version(target) > stable_version(current), "Target must be newer than current; use --check for prepared source")
+    require(not git("status", "--porcelain", "--untracked-files=all"), "Initial preparation requires a clean working tree")
+    plan = preparation_plan(current, target)
+    note_file = str(notes_path(target).relative_to(ROOT))
+    if (ROOT / note_file).exists():
+        notes = reviewed_notes(target)
+        require(all(f"### {section}\n" in notes for section in ("Highlights", "Compatibility and scope", "Validation")),
+                "Missing release-note section contract")
+    else:
+        require(all(f"### {section}\n" in NOTES_TEMPLATE for section in ("Highlights", "Compatibility and scope", "Validation")),
+                "Missing release-note template contract")
+        plan[note_file] = NOTES_TEMPLATE.format(version=target)
+    print(f"Current version: {current}\nTarget version:  {target}\n\n{'Would update' if dry_run else 'Updated'}:")
+    for path in plan:
+        print(f"  {path}")
+    if not dry_run:
+        for path, text in plan.items():
+            (ROOT / path).write_text(text)
+    print(f"\nRequired next:\n  review {note_file}\n  prepare {target} --check\n  full local qualification (RELEASE_CHECKLIST.md)\n  human nix flake check")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["inputs", "identity", "state", "inventory", "compare", "signed", "remote", "tests", "focused-tests", "secrets", "upload-ready", "tag-release"])
+    parser.add_argument("command", choices=["inputs", "identity", "state", "inventory", "compare", "signed", "remote", "tests", "focused-tests", "secrets", "upload-ready", "tag-release", "prepare"])
+    parser.add_argument("version", nargs="?")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    if args.command == "prepare":
+        require(args.version is not None, "prepare requires a target version")
+        prepare(args.version, args.dry_run, args.check)
+        return
+    require(args.version is None and not args.dry_run and not args.check, "Preparation options require prepare")
     if args.command == "upload-ready":
         require(central_state() == "publish", "Central version appeared; skip upload and rerun for strict verification")
     elif args.command == "state":
@@ -285,6 +445,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeError, KeyError, subprocess.CalledProcessError) as error:
+    except (RuntimeError, KeyError, OSError, subprocess.CalledProcessError) as error:
         print(f"Release check failed: {error}", file=sys.stderr)
         sys.exit(1)

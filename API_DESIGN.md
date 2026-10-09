@@ -13,8 +13,12 @@ no API stability promise yet.
 provider, exposing core transitively. Ordinary applications use `NioTotipo` and
 the high-level API; publication does not promote experimental SPI internals to
 normal application entry points. See README for release availability and coordinates.
-VERSION remains 0.1.5 during this unreleased breaking simplification; release
-version selection is separate. Independent object-candidate validation is retained.
+<!-- prepared-release:start -->
+Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+<!-- prepared-release:end -->
+
+0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
+Independent object-candidate validation is retained.
 
 ## Entry points and lifecycle outcomes
 
