@@ -53,6 +53,9 @@ python3 -B publishing/release.py prepare <version> --check
 
 This repeatable check permits the preparation diff and writes nothing. It checks
 consistent source metadata and reviewed-note structure, not qualification results.
+It also works on a detached checkout of the reviewed commit, as used by the release
+workflow. Release authority remains enforced by the separate identity preflight;
+source mutation and dry-run still require clean `main`.
 A second mutating prepare rejects an equal version; use `--check` for idempotent
 validation. The one-time legacy 0.1.5 status conversion is explicitly bounded.
 

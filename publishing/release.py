@@ -380,9 +380,10 @@ def prepare(target, dry_run=False, check=False):
     current = version_text.removesuffix("\n")
     stable_version(current)
     require(version_text == current + "\n", "Unexpected current VERSION layout")
-    require(git("branch", "--show-current") == "main", "Preparation requires main")
     source_integrity()
     if check:
+        # File validation also runs on the workflow's detached reviewed commit.
+        # Release authority is checked separately by identity(), before this check.
         require(not dry_run, "Choose either --check or --dry-run")
         require(current == target, "VERSION differs from prepared target")
         plan = preparation_plan(current, target)
@@ -393,6 +394,7 @@ def prepare(target, dry_run=False, check=False):
         require("TODO:" not in notes, "Release notes still need review")
         print(f"Prepared source OK: {target}; exact r19 integrity valid (qualification is separate)")
         return
+    require(git("branch", "--show-current") == "main", "Preparation requires main")
     require(stable_version(target) > stable_version(current), "Target must be newer than current; use --check for prepared source")
     require(not git("status", "--porcelain", "--untracked-files=all"), "Initial preparation requires a clean working tree")
     plan = preparation_plan(current, target)

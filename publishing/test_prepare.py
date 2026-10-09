@@ -111,6 +111,24 @@ release selection. The published 0.1.4 examples above are unchanged.
             with self.assertRaisesRegex(RuntimeError, "clean working tree"):
                 release.prepare("0.2.0", dry_run=dry)
 
+    def test_check_accepts_detached_reviewed_checkout_without_git_operations(self):
+        release.prepare("0.2.0")
+        self.finish_notes()
+        self.branch = ""
+        before = self.files()
+        with patch.object(release, "git", side_effect=AssertionError("Check must only validate files")):
+            with patch.object(sys, "argv", ["release.py", "prepare", "0.2.0", "--check"]):
+                release.main()
+        self.assertEqual(self.files(), before)
+
+    def test_detached_checkout_cannot_prepare_or_dry_run(self):
+        self.branch = ""
+        before = self.files()
+        for dry in (False, True):
+            with self.assertRaisesRegex(RuntimeError, "requires main"):
+                release.prepare("0.2.0", dry_run=dry)
+        self.assertEqual(self.files(), before)
+
     def test_malformed_equal_and_downgrade_rejected(self):
         for target in ("0.1.5", "0.1.4", "0.0.9", "0.02.0", "0.2", "0.2.0\n", "0.2.0-SNAPSHOT", "0.2.0-rc1", "$(id)"):
             with self.subTest(target=target), self.assertRaises(RuntimeError):
