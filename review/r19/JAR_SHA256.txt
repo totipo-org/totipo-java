@@ -1,0 +1,6 @@
+e2661770e0e59ca733959b4931689a9253988352605087c390bfc3a045dd9b6c  core/build/libs/totipo-core-0.1.5-sources.jar
+9b5363fc6d072d9c6ff55f95c8d6e636a914d1d9a5a947703c2e71baecb00193  core/build/libs/totipo-core-0.1.5-javadoc.jar
+4f1fb4bb1ab5f0a78c0f2d9a1ed3146413c94f631e7f9b95477968a66968520f  core/build/libs/totipo-core-0.1.5.jar
+776068249e689e94136748fb8ffd86c837e0af8bbb6cec8ae5e785c4eca4ba93  storage-nio/build/libs/totipo-storage-nio-0.1.5.jar
+bb690c98837f938b1cce75cdfc06b44b47b066c4cb937a4ec461f2dc82f5b04b  storage-nio/build/libs/totipo-storage-nio-0.1.5-sources.jar
+81a747f6ec3e11da56adfdfc467e1f72868387896a08d326741d702cdfd7170c  storage-nio/build/libs/totipo-storage-nio-0.1.5-javadoc.jar

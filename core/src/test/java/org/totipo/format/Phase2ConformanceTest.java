@@ -52,8 +52,8 @@ class Phase2ConformanceTest {
         all.addAll(deferred);
         assertEquals(all, categories);
         assertEquals(expected, executed);
-        assertEquals(90, executed.size());
-        assertEquals(java.util.Map.of("bootstrap", 4, "crypto", 5, "encoding", 30, "fold", 6,
-                "graph", 13, "metadata", 7, "size", 1, "totp", 3, "storage", 13, "vault", 8), counts);
+        assertEquals(92, executed.size());
+        assertEquals(java.util.Map.of("bootstrap", 5, "crypto", 5, "encoding", 30, "fold", 6,
+                "graph", 13, "metadata", 7, "size", 1, "totp", 3, "storage", 13, "vault", 9), counts);
     }
 }

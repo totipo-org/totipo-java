@@ -20,36 +20,6 @@ public final class NioTotipoStore implements TotipoStore {
         return open(root, new NioObjectStorage.Operations(durability),
                 new NioVaultStorage.Operations(durability), new ScanOperations());
     }
-    /** Open an explicitly private/exclusive local store using complete-stage moves for new files.
-     * The root must be controlled exclusively by the application: no independent ordinary writers
-     * or synchronization software may mutate it. The application must serialize all store calls
-     * across every writer, handle/session and bridge operation for this root;
-     * core serializes only within each session.
-     * Reconcile remote/provider bytes through a separate application-controlled bridge.
-     * Directly synchronized/shared directories should continue using the existing shared mode
-     * unless separately qualified. Existing {@code open(...)} behavior retains hard-link
-     * publication; private mode is never an automatic fallback when hard links are unavailable.
-     * This does not provide atomic no-replace installation or protection against same-privilege malicious races.
-     * Ordinary failures and ambiguous acknowledgements retain the usual SPI result semantics.
-     * Opening is read-only and does not verify or enforce these deployment assumptions.
-     * @param root existing local store directory
-     * @return the private store
-     * @throws IOException if the root cannot safely be opened
-     */
-    public static NioTotipoStore openPrivate(Path root) throws IOException {
-        return openPrivate(root, new NioDurability());
-    }
-    /** Open a private/exclusive local store with an explicit directory persistence capability.
-     * All deployment and serialization requirements of {@link #openPrivate(Path)} apply.
-     * @param root existing local store directory
-     * @param durability required directory persistence capability
-     * @return the private store
-     * @throws IOException if the root cannot safely be opened
-     */
-    public static NioTotipoStore openPrivate(Path root, StorageDurability durability) throws IOException {
-        return open(root, new NioObjectStorage.Operations(durability, NioCanonicalInstaller.PRIVATE_MOVE),
-                new NioVaultStorage.Operations(durability, NioCanonicalInstaller.PRIVATE_MOVE), new ScanOperations());
-    }
     static NioTotipoStore open(Path root, NioObjectStorage.Operations objects,
                               NioVaultStorage.Operations vaults, ScanOperations scans) throws IOException {
         return new NioTotipoStore(NioFiles.root(root.toAbsolutePath()), objects, vaults, scans);
@@ -81,55 +51,32 @@ public final class NioTotipoStore implements TotipoStore {
         if (!NioReads.directName(root, name.value())) return new ObjectWrite.Failed(StoreFailure.UNSAFE_NAMESPACE);
         try {
             NioFiles.directory(root);
-            return objects.publish(name.value(), bytes, true) ? new ObjectWrite.Written() : new ObjectWrite.AlreadyPresentExact();
+            return objects.publish(name.value(), bytes) ? new ObjectWrite.Written() : new ObjectWrite.AlreadyPresentExact();
         } catch (NioObjectStorage.Different different) {
             return new ObjectWrite.ExistingDifferent();
         } catch (IOException | SecurityException | UnsupportedOperationException failure) {
             return objects.mutationEntered ? new ObjectWrite.Uncertain(NioObjectScan.reason(failure)) : new ObjectWrite.Failed(NioObjectScan.reason(failure));
         }
     }
-    @Override public VaultPrepare prepareVault(byte[] bytes) {
+    @Override public VaultCreate createVault(byte[] bytes) {
         active(); Objects.requireNonNull(bytes);
-        try { NioFiles.directory(root); return new VaultPrepare.Prepared(new Prepared(vaults.stage(bytes, null))); }
-        catch (IOException | SecurityException | UnsupportedOperationException failure) {
-            return new VaultPrepare.Failed(NioObjectScan.reason(failure));
-        }
-    }
-    private final class Prepared implements PreparedVault {
-        private final NioVaultStorage.Stage stage;
-        private boolean consumed;
-        Prepared(NioVaultStorage.Stage stage) { this.stage = stage; }
-        private void usable() {
-            active();
-            if (consumed) throw new IllegalStateException("Prepared vault consumed");
-            stage.requireActive();
-        }
-        @Override public BoundedRead readBack(int expectedBytes) { usable(); return stage.readBack(expectedBytes); }
-        @Override public VaultInstall installCanonicalIfAbsent() {
-            usable(); consumed = true;
+        vaults.mutationEntered = false;
+        try {
+            NioFiles.directory(root);
+            if (NioFiles.findExactDirectChild(root, "vault").isPresent()) return new VaultCreate.AlreadyPresent();
+            vaults.create(bytes);
+            return new VaultCreate.Created();
+        } catch (FileAlreadyExistsException exists) {
+            if (vaults.mutationEntered) return new VaultCreate.Uncertain(NioObjectScan.reason(exists));
             try {
-                NioFiles.directory(root);
-                if (NioFiles.findExactDirectChild(root, "vault").isPresent()) return new VaultInstall.AlreadyPresent();
-                stage.installInitialDurably();
-                return new VaultInstall.Installed();
-            } catch (FileAlreadyExistsException exists) {
-                try {
-                    if (NioFiles.findExactDirectChild(root, "vault").isPresent()) return new VaultInstall.AlreadyPresent();
-                } catch (IOException | SecurityException ignored) { /* Known no-install collision, unsafe winner. */ }
-                return new VaultInstall.Failed(StoreFailure.UNSAFE_NAMESPACE);
-            } catch (IOException | SecurityException | UnsupportedOperationException failure) {
-                return stage.mutationEntered ? new VaultInstall.Uncertain(NioObjectScan.reason(failure)) : new VaultInstall.Failed(NioObjectScan.reason(failure));
-            }
+                if (NioFiles.findExactDirectChild(root, "vault").isPresent()) return new VaultCreate.AlreadyPresent();
+            } catch (IOException | SecurityException ignored) { /* Positive no-install collision, unsafe winner. */ }
+            return new VaultCreate.Failed(StoreFailure.UNSAFE_NAMESPACE);
+        } catch (IOException | SecurityException | UnsupportedOperationException failure) {
+            return vaults.mutationEntered
+                    ? new VaultCreate.Uncertain(NioObjectScan.reason(failure))
+                    : new VaultCreate.Failed(NioObjectScan.reason(failure));
         }
-        @Override public VaultReplace replaceCanonical() {
-            usable(); consumed = true;
-            try {
-                NioFiles.directory(root); stage.replaceCanonicalDurably(); return new VaultReplace.Replaced();
-            } catch (IOException | SecurityException | UnsupportedOperationException failure) {
-                return stage.mutationEntered ? new VaultReplace.Uncertain(NioObjectScan.reason(failure)) : new VaultReplace.Failed(NioObjectScan.reason(failure));
-            }
-        }
-        @Override public void close() { consumed = true; stage.close(); }
     }
     @Override public void close() {
         if (closed) return;

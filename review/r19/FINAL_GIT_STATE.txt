@@ -1,0 +1,128 @@
+main
+7d3461e297f60711c8ec4a202d0f6dc68c0e81bc
+VERSION 0.1.5
+Index empty; all changes unstaged/uncommitted.
+ M .github/workflows/release.yml
+ M API_DESIGN.md
+ M README.md
+ M RELEASE_CHECKLIST.md
+ M SPEC_PIN.md
+ M SPI_DESIGN.md
+ M core/src/main/java/org/totipo/CreateVaultResult.java
+ M core/src/main/java/org/totipo/ObjectCandidateValidation.java
+ D core/src/main/java/org/totipo/PasswordChangeResult.java
+ M core/src/main/java/org/totipo/Totipo.java
+ D core/src/main/java/org/totipo/VaultFingerprint.java
+ M core/src/main/java/org/totipo/VaultSession.java
+ M core/src/main/java/org/totipo/format/ApplicationSession.java
+ D core/src/main/java/org/totipo/format/ApplicationVaults.java
+ D core/src/main/java/org/totipo/format/BoundedObjectRead.java
+ M core/src/main/java/org/totipo/format/CryptoSupport.java
+ D core/src/main/java/org/totipo/format/DiscoverySource.java
+ M core/src/main/java/org/totipo/format/ObjectId.java
+ D core/src/main/java/org/totipo/format/StoreAdapter.java
+ M core/src/main/java/org/totipo/format/TokenPublisher.java
+ M core/src/main/java/org/totipo/format/TokenStoreObservation.java
+ M core/src/main/java/org/totipo/format/TokenStoreReader.java
+ D core/src/main/java/org/totipo/format/V1ObjectPublicationStore.java
+ D core/src/main/java/org/totipo/format/VaultBootstrapReplacementStorage.java
+ D core/src/main/java/org/totipo/format/VaultBootstrapStorage.java
+ M core/src/main/java/org/totipo/format/VaultBootstrapWriter.java
+ M core/src/main/java/org/totipo/format/VaultLifecycle.java
+ M core/src/main/java/org/totipo/format/VaultUnlockResult.java
+ D core/src/main/java/org/totipo/spi/PreparedVault.java
+ M core/src/main/java/org/totipo/spi/TotipoStore.java
+ D core/src/main/java/org/totipo/spi/VaultInstall.java
+ D core/src/main/java/org/totipo/spi/VaultPrepare.java
+ D core/src/main/java/org/totipo/spi/VaultReplace.java
+ D core/src/test/java/org/totipo/api/PrivateNioWorkflowTest.java
+ M core/src/test/java/org/totipo/api/PublicApiTest.java
+ M core/src/test/java/org/totipo/api/SpiApplicationTest.java
+ D core/src/test/java/org/totipo/conformance/R18ProfileIntegrityTest.java
+ M core/src/test/java/org/totipo/conformance/SpecSnapshotIntegrityTest.java
+ M core/src/test/java/org/totipo/format/BootstrapVectorTest.java
+ M core/src/test/java/org/totipo/format/CryptoSupportTest.java
+ D core/src/test/java/org/totipo/format/DiscoverySourceTest.java
+ D core/src/test/java/org/totipo/format/FakeV1ObjectPublicationStore.java
+ M core/src/test/java/org/totipo/format/ObjectCandidateBoundaryTest.java
+ M core/src/test/java/org/totipo/format/Phase2ConformanceTest.java
+ M core/src/test/java/org/totipo/format/PublicationTestStore.java
+ M core/src/test/java/org/totipo/format/StorageVectorChecks.java
+ M core/src/test/java/org/totipo/format/TokenNioWorkflowTest.java
+ M core/src/test/java/org/totipo/format/TokenPublicationTest.java
+ D core/src/test/java/org/totipo/format/TokenStoreReaderTest.java
+ D core/src/test/java/org/totipo/format/V1ObjectPublicationStoreTest.java
+ M core/src/test/java/org/totipo/format/VaultBootstrapWriterTest.java
+ D core/src/test/java/org/totipo/format/VaultLifecycleTest.java
+ D core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java
+ D core/src/test/java/org/totipo/format/VaultTestStore.java
+ M core/src/test/java/org/totipo/format/VaultUnlockerTest.java
+ M core/src/test/java/org/totipo/format/VaultVectorChecks.java
+ M core/src/test/java/org/totipo/testing/MemoryVault.java
+ M core/src/test/resources/totipo-spec/v1-pre-rc/SNAPSHOT.sha256
+ M core/src/test/resources/totipo-spec/v1-pre-rc/requirements/v1-pre-rc.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/spec/totipo-vault-format-v1.md
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/FORMAT.md
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/case.schema.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.ascii.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.empty.001.json
+ D core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.rewrap.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.unicode.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.ambiguous-publication.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.exact-existing-publication.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.missing-parent-publication.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.new-publication.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.non-exact-publication.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/storage/v1.storage.unreadable-target.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-ambiguous.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-empty.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-existing.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-orphans.001.json
+ D core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.replace-ambiguous.001.json
+ D core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.replace-equal.001.json
+ D core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.replace-stale.001.json
+ D core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.replace-unreadable.001.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/manifest.json
+ M core/src/test/resources/totipo-spec/v1-pre-rc/vectors/manifest.schema.json
+ M publishing/consumer-smoke/src/main/java/ConsumerSmoke.java
+ M publishing/release.py
+ M publishing/test_release.py
+ D storage-nio/src/main/java/org/totipo/storage/nio/NioApplicationPublication.java
+ M storage-nio/src/main/java/org/totipo/storage/nio/NioCanonicalInstaller.java
+ D storage-nio/src/main/java/org/totipo/storage/nio/NioDiscoverySource.java
+ M storage-nio/src/main/java/org/totipo/storage/nio/NioObjectStorage.java
+ M storage-nio/src/main/java/org/totipo/storage/nio/NioTotipo.java
+ M storage-nio/src/main/java/org/totipo/storage/nio/NioTotipoStore.java
+ D storage-nio/src/main/java/org/totipo/storage/nio/NioV1ObjectPublicationStore.java
+ D storage-nio/src/main/java/org/totipo/storage/nio/NioVaultBootstrapStorage.java
+ M storage-nio/src/main/java/org/totipo/storage/nio/NioVaultStorage.java
+ D storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java
+ D storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java
+ D storage-nio/src/test/java/org/totipo/storage/nio/NioApplicationPublicationTest.java
+ M storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java
+ M storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java
+ D storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java
+ M storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java
+ D storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java
+ M storage-nio/src/testFixtures/java/org/totipo/storage/nio/ObjectPublicationFaults.java
+ D storage-nio/src/testFixtures/java/org/totipo/storage/nio/ReplacementStorageFaults.java
+ D storage-nio/src/testFixtures/java/org/totipo/storage/nio/VaultStorageFaults.java
+?? core/src/main/java/org/totipo/VaultId.java
+?? core/src/main/java/org/totipo/spi/VaultCreate.java
+?? core/src/test/java/org/totipo/api/ImmutableNioWorkflowTest.java
+?? core/src/test/java/org/totipo/api/VaultIdTest.java
+?? core/src/test/java/org/totipo/conformance/R19ProfileIntegrityTest.java
+?? core/src/test/java/org/totipo/format/TestStore.java
+?? core/src/test/java/org/totipo/format/TokenObservationTest.java
+?? core/src/test/java/org/totipo/format/VaultCreationTest.java
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.known-answer-extra.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/bootstrap/v1.bootstrap.vault-id-mutation.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-different.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-revalidation-failed.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.create-wrong-type.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.object-exact-retry-unchanged.001.json
+?? core/src/test/resources/totipo-spec/v1-pre-rc/vectors/cases/vault/v1.vault.object-publication-unchanged.001.json
+?? review/V1_R19_REPIN_SIMPLIFICATION_REPORT.md
+?? review/r19/
+?? storage-nio/src/main/java/org/totipo/storage/nio/NioStoreComposition.java
+?? storage-nio/src/test/java/org/totipo/storage/nio/NioCreateTest.java

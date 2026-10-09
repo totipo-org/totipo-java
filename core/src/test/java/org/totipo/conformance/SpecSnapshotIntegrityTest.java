@@ -23,27 +23,27 @@ import org.junit.jupiter.api.io.TempDir;
 /** Snapshot integrity checks only: this test does not interpret any Totipo protocol bytes. */
 class SpecSnapshotIntegrityTest {
     private static final Path ROOT = Path.of("src/test/resources/totipo-spec/v1-pre-rc");
-    private static final String SOURCE_COMMIT = "4623a7e1718e23504903096c92332597057bd8f0";
+    private static final String SOURCE_COMMIT = "cdb4e91be1c6d3704874b2b92457ffe7be5e9084";
     private static final String CHECKSUMS = "SNAPSHOT.sha256";
     private static final String PROFILE_HASH =
-            "4c7954cd2b59aa0afbbe3c22080cadddf72135d884b186a671266c29d58418df";
+            "7242fc557a7ca56452c934bedc5e7dc2835248f5cd36fa220f05588dc967ec80";
     private static final Map<String, String> PINNED = Map.of(
             "spec/totipo-vault-format-v1.md",
-            "8a357e75f3ddd92efa954fde2ffc9af33f40a2c2396d6afbf1d5de5f00bc4f8a",
+            "8bb76b890086eb4bf89271edd5861e02f833f3ffa11a83b5865080ed4e4228cb",
             "vectors/manifest.json",
-            "bd2b52adc05b26e09790f5f7367761b2b86ba3cf8d97d10ed187fcf7213fcf02",
+            "3953dbc315b4dcb3d0d31dd399bf82a15cb38c49fde2e2b93ea81c5cfe0ec714",
             "vectors/manifest.schema.json",
-            "f6dfef831f9b391ef8c9e675024b9cb9cb6cc352858c182439ee8847e55c3647",
+            "f265771f904be57d19602dd6da9a572c16b3f80fdd166c5177721aaa3f9a91ec",
             "vectors/case.schema.json",
-            "d38618f53dcf0a558c389831e8838a07248066beff392812f3d277cc974e25c9",
+            "99805d442f13872cd4febe9ac8ae4f36fd25607580bc1e457ff5ae2efe199e23",
             "requirements/v1-pre-rc.json", PROFILE_HASH);
     private static final Pattern RECORD = Pattern.compile("([0-9a-f]{64})  ([A-Za-z0-9_./-]+)");
 
     @Test
     void snapshotMatchesChecksumsAndIndependentPins() throws Exception {
         Set<String> paths = verify(ROOT);
-        assertEquals(97, paths.size(), "Upstream file count");
-        assertEquals(90L, paths.stream().filter(p -> p.startsWith("vectors/cases/") && p.endsWith(".json")).count());
+        assertEquals(99, paths.size(), "Upstream file count");
+        assertEquals(92L, paths.stream().filter(p -> p.startsWith("vectors/cases/") && p.endsWith(".json")).count());
         for (var pin : PINNED.entrySet()) {
             assertTrue(paths.contains(pin.getKey()), pin.getKey());
             assertEquals(pin.getValue(), sha256(ROOT.resolve(pin.getKey())), pin.getKey());
@@ -51,7 +51,7 @@ class SpecSnapshotIntegrityTest {
         List<String> pinDocument = Files.readAllLines(Path.of("../SPEC_PIN.md"));
         assertEquals(List.of("- Exact upstream commit: `" + SOURCE_COMMIT + "`"),
                 pinDocument.stream().filter(line -> line.startsWith("- Exact upstream commit:")).toList());
-        assertEquals(List.of("- Normative revision: `r18`"),
+        assertEquals(List.of("- Normative revision: `r19`"),
                 pinDocument.stream().filter(line -> line.startsWith("- Normative revision:")).toList());
         List<String> profilePin = pinDocument.stream()
                 .filter(line -> line.startsWith("- Profile file SHA-256:")).toList();

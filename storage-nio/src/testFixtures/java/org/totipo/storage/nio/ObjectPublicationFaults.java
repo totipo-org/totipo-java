@@ -5,14 +5,14 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.util.*;
-public final class ObjectPublicationFaults extends NioV1ObjectPublicationStore.Operations {
+public final class ObjectPublicationFaults extends NioObjectStorage.Operations {
     public ObjectPublicationFaults(StorageDurability durability) { super(durability); }
     @FunctionalInterface public interface Action { void run(String point) throws IOException; }
     public Action action = point -> {};
     public String fail = "";
     public int writeLimit = 1024;
     public final List<String> events = new ArrayList<>();
-    public NioV1ObjectPublicationStore open(Path root) throws IOException { return NioV1ObjectPublicationStore.open(root, this); }
+    public NioTotipoStore open(Path root) throws IOException { return NioTotipoStore.open(root, this, new NioVaultStorage.Operations(new NioDurability()), new NioTotipoStore.ScanOperations()); }
     @Override void at(String point) throws IOException { events.add(point); action.run(point); if (fail.equals(point)) throw new IOException("injected " + point); }
     @Override int write(FileChannel channel, ByteBuffer bytes) throws IOException {
         at("write"); if (fail.equals("zero")) return 0;

@@ -78,13 +78,6 @@ final class CryptoSupport {
         return expand(prk, ascii("totipo/v1/object-key-root"), 32);
     }
 
-    static byte[] vaultFingerprint(byte[] root) {
-        if (root.length != 32) {
-            throw new IllegalArgumentException("Root key must be 32 bytes");
-        }
-        return hmac(root, ascii("totipo/v1/vault-fingerprint"));
-    }
-
     static byte[] objectKey(byte[] objectRoot, ObjectId id) {
         return expand(objectRoot, join(ascii("totipo/v1/object-key"), id.bytes()), 32);
     }

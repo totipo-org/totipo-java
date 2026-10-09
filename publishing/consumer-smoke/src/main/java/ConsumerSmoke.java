@@ -22,12 +22,10 @@ public final class ConsumerSmoke {
         Path root = Files.createTempDirectory("totipo-consumer-");
         try {
             try (NioTotipoStore shared = NioTotipoStore.open(root);
-                 NioTotipoStore privateDefault = NioTotipoStore.openPrivate(root);
-                 NioTotipoStore privateExplicit = NioTotipoStore.openPrivate(root, new NioDurability())) {
-                // Both old and new factories must link and open without mutating the root.
+                 org.totipo.spi.TotipoStore coordinated = org.totipo.storage.nio.NioStoreComposition.coordinatedDelegate(root, new NioDurability())) {
+                // Shared and coordinated factories must link and open without mutating the root.
                 shared.scanObjects();
-                privateDefault.scanObjects();
-                privateExplicit.scanObjects();
+                coordinated.scanObjects();
             }
             try (var children = Files.list(root)) {
                 if (children.findAny().isPresent()) throw new AssertionError("Opening mutated root");
@@ -35,7 +33,7 @@ public final class ConsumerSmoke {
         } finally {
             Files.delete(root);
         }
-        System.out.println("Shared/private published factories open read-only");
+        System.out.println("Shared/coordinated published factories open read-only");
         System.out.println("Published API and runtime-only BC load successfully");
     }
     public static OpenResult open(Path path, char[] password) {

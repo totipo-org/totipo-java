@@ -15,8 +15,8 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 CENTRAL = "https://repo.maven.apache.org/maven2/"
-SPEC_COMMIT = "4623a7e1718e23504903096c92332597057bd8f0"
-SPEC_PIN_SHA256 = "f4212f2c1d22d3acb553751755e5ca30689c7138776140a59b69383e27557b08"
+SPEC_COMMIT = "cdb4e91be1c6d3704874b2b92457ffe7be5e9084"
+SPEC_PIN_SHA256 = "736f9489852dcf2d0f22fb13f7da9fcd2dca4de18f8d735fbb34aad6162dedd0"
 UPLOAD_STEP = "Publish and release to Maven Central"
 
 
@@ -201,13 +201,13 @@ def test_results(focused=False):
     for suite in suites.values():
         total += int(suite.attrib["tests"])
         require(all(int(suite.attrib.get(key, "0")) == 0 for key in ("failures", "errors", "skipped")), "JUnit failures/errors/skips")
-    wanted = {"org.totipo.conformance.SpecSnapshotIntegrityTest": 3, "org.totipo.conformance.R18ProfileIntegrityTest": 1}
+    wanted = {"org.totipo.conformance.SpecSnapshotIntegrityTest": 3, "org.totipo.conformance.R19ProfileIntegrityTest": 1}
     for name, count in wanted.items():
         require(name in suites and int(suites[name].attrib["tests"]) == count, f"Missing explicit integrity accounting: {name}")
     if not focused:
         corpus = suites.get("org.totipo.format.Phase2ConformanceTest")
-        require(corpus is not None and any(t.attrib["name"].startswith("everyImplementedCaseExecutesWithoutSkipping") for t in corpus.findall("testcase")), "Missing explicit 90/90 portable-case execution test")
-        print("90/90 portable cases: exact-set execution assertion passed")
+        require(corpus is not None and any(t.attrib["name"].startswith("everyImplementedCaseExecutesWithoutSkipping") for t in corpus.findall("testcase")), "Missing explicit 92/92 portable-case execution test")
+        print("92/92 portable cases: exact-set execution assertion passed")
     print(f"{total} JUnit tests; zero failures/errors/skips; snapshot 3/3; profile 1/1")
 
 
@@ -237,7 +237,7 @@ def tag_release():
     require(git("cat-file", "-t", "v0.1.0") == "tag", "Established source-tag style must remain annotated")
     require("-----BEGIN PGP SIGNATURE-----" not in git("cat-file", "-p", "v0.1.0"), "Existing source-tag signing policy needs human review")
     notes = reviewed_notes(version)
-    body = notes.rstrip() + f"\n\n### Release provenance\n\n- Java source commit: `{commit}`\n- Totipo v1/r18 spec commit: `{SPEC_COMMIT}`\n- Portable corpus: 90/90 executed, none deferred.\n"
+    body = notes.rstrip() + f"\n\n### Release provenance\n\n- Java source commit: `{commit}`\n- Totipo v1/r19 spec commit: `{SPEC_COMMIT}`\n- Portable corpus: 92/92 executed, none deferred.\n"
     record = release_record(version)
     if record:
         require(record["tag_name"] == tag and record["name"] == tag and not record["draft"] and not record["prerelease"] and record["body"].replace("\r\n", "\n").rstrip() == body.rstrip(), "Existing GitHub release is inconsistent; do not overwrite")

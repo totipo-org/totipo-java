@@ -84,7 +84,7 @@ jobs:
           ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
       - name: Focused spec and profile integrity
         run: |
-          ./gradlew :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest --tests org.totipo.conformance.R18ProfileIntegrityTest
+          ./gradlew :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest --tests org.totipo.conformance.R19ProfileIntegrityTest
           python3 publishing/release.py focused-tests
           (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
           git diff --check

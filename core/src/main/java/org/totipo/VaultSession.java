@@ -3,17 +3,13 @@ package org.totipo;
 import java.util.concurrent.Flow;
 /** Live owner of vault secrets and storage. See API_DESIGN.md for normative contracts. */
 public interface VaultSession extends AutoCloseable {
-    VaultFingerprint fingerprint();
+    VaultId vaultId();
     /** Immediate, I/O-free read of the latest emitted state. */
     VaultState state();
     /** Ordered replay-latest publisher with independent coalescing backpressure. */
     Flow.Publisher<VaultState> states();
     /** Non-blocking request for another local observation; requests may coalesce. */
     void requestRefresh();
-    /** May block for KDF and configured-store I/O. Uncertainty requires re-observation/reopen.
-     * Rewrap retains the same root with fresh salt/nonce. It does not revoke old wrappers,
-     * rotate the root or provide recovery from root compromise. */
-    PasswordChangeResult changePassword(char[] currentPassword, char[] newPassword);
     /** Synchronously validates an immutable objects-v1 candidate against this open authenticated vault.
      * Success establishes exact physical length (1024 bytes), envelope authentication,
      * keyed OBJECT_ID match, padding/framing validity and current semantic TOKEN validity.

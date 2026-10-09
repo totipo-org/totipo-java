@@ -1,9 +1,7 @@
 package org.totipo.testing;
 
 import org.totipo.*;
-import org.totipo.format.*;
 import java.io.*;
-import java.nio.channels.Channels;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -11,14 +9,12 @@ import java.util.concurrent.*;
 public final class MemoryVault {
     public final Map<String, byte[]> objects = new ConcurrentHashMap<>();
     public volatile byte[] bootstrap;
-    public volatile boolean observationUnavailable, readUnavailable, failBeforeStage, failReplacement, staleReplacement;
+    public volatile boolean observationUnavailable, readUnavailable, failCreateBeforeMutation, failCreate;
     public volatile int publicationMode; // 0 acknowledged, 1 throws before write, 2 writes then throws
     public volatile int writes, scans, publications;
     public volatile RuntimeException fatalObservation;
     public volatile boolean publicationClosed, bootstrapClosed;
-    public volatile int stagedTrailingBytes, initialInstallAttempts, replacementAttempts;
-    public volatile int bootstrapReadLimit = Integer.MAX_VALUE, maxBootstrapRead;
-    public Runnable afterReplacementStage = () -> {};
+    public volatile int initialInstallAttempts;
     public volatile CountDownLatch entered, proceed, scanEntered, scanProceed;
     public final List<String> attemptedIds = new CopyOnWriteArrayList<>();
     public final List<byte[]> attemptedBytes = new CopyOnWriteArrayList<>();
@@ -26,84 +22,58 @@ public final class MemoryVault {
         return ((CreateVaultResult.Created) createResult("password".toCharArray())).session();
     }
     public CreateVaultResult createResult(char[] password) {
-        return ApplicationVaults.create(new Bootstrap(), this::snapshot, new Publication(), password);
+        return Totipo.create(new Store(), password);
     }
     public VaultSession open() { return ((OpenResult.Opened) openResult("password".toCharArray())).session(); }
     public OpenResult openResult(char[] password) {
-        return ApplicationVaults.open(new Bootstrap(), this::snapshot, new Publication(), password);
+        return Totipo.open(new Store(), password);
     }
-    private DiscoverySource.Snapshot snapshot() throws IOException {
-        scans++;
-        if (scanEntered != null) { scanEntered.countDown(); await(scanProceed); }
-        if (fatalObservation != null) throw fatalObservation;
-        if (observationUnavailable) throw new IOException("Unavailable observation");
-        var candidates = new ArrayList<DiscoverySource.Candidate>();
-        objects.forEach((id, bytes) -> candidates.add(new DiscoverySource.Candidate(ObjectId.fromFilename(id),
-                () -> Channels.newChannel(new ByteArrayInputStream(bytes)))));
-        return new DiscoverySource.Snapshot(candidates, DiscoverySource.SnapshotIssue.NONE);
-    }
-    private final class Publication implements V1ObjectPublicationStore {
-        @Override public PublicationResult publish(ObjectId id, byte[] bytes) throws IOException {
-            publications++; attemptedIds.add(id.filename()); attemptedBytes.add(bytes.clone());
-            if (entered != null) { entered.countDown(); await(proceed); }
-            if (publicationMode == 1) throw new IOException("Provider unavailable");
-            var previous = objects.putIfAbsent(id.filename(), bytes.clone());
+    private final class Store implements org.totipo.spi.TotipoStore {
+        @Override public org.totipo.spi.ObjectScan scanObjects() {
+            scans++;
+            try {
+                if (scanEntered != null) { scanEntered.countDown(); await(scanProceed); }
+            } catch (IOException e) { return new org.totipo.spi.ObjectScan.Incomplete(List.of(), org.totipo.spi.StoreFailure.UNAVAILABLE); }
+            if (fatalObservation != null) throw fatalObservation;
+            var entries = objects.entrySet().stream().map(e -> new org.totipo.spi.ObjectEntry(
+                    new org.totipo.spi.ObjectName(e.getKey()), org.totipo.spi.EntryKind.REGULAR,
+                    OptionalLong.of(e.getValue().length))).toList();
+            return observationUnavailable ? new org.totipo.spi.ObjectScan.Incomplete(entries, org.totipo.spi.StoreFailure.UNAVAILABLE)
+                    : new org.totipo.spi.ObjectScan.Complete(entries);
+        }
+        @Override public org.totipo.spi.BoundedRead readVault(int expected) {
+            if (readUnavailable) return new org.totipo.spi.BoundedRead.Unavailable(org.totipo.spi.StoreFailure.UNAVAILABLE);
+            return read(bootstrap, expected);
+        }
+        @Override public org.totipo.spi.BoundedRead readObject(org.totipo.spi.ObjectName name, int expected) {
+            return read(objects.get(name.value()), expected);
+        }
+        @Override public org.totipo.spi.ObjectWrite publishObject(org.totipo.spi.ObjectName name, byte[] bytes) {
+            publications++; attemptedIds.add(name.value()); attemptedBytes.add(bytes.clone());
+            try { if (entered != null) { entered.countDown(); await(proceed); } }
+            catch (IOException e) { return new org.totipo.spi.ObjectWrite.Failed(org.totipo.spi.StoreFailure.UNAVAILABLE); }
+            if (publicationMode == 1) return new org.totipo.spi.ObjectWrite.Failed(org.totipo.spi.StoreFailure.UNAVAILABLE);
+            var previous = objects.putIfAbsent(name.value(), bytes.clone());
             if (previous == null) writes++;
-            else if (!Arrays.equals(previous, bytes)) throw new IOException("Collision");
-            if (publicationMode == 2) throw new IOException("Acknowledgement lost");
-            return previous == null ? PublicationResult.PUBLISHED_NEW : PublicationResult.ALREADY_PRESENT_EXACT;
+            else if (!Arrays.equals(previous, bytes)) return new org.totipo.spi.ObjectWrite.ExistingDifferent();
+            if (publicationMode == 2) return new org.totipo.spi.ObjectWrite.Uncertain(org.totipo.spi.StoreFailure.UNAVAILABLE);
+            return previous == null ? new org.totipo.spi.ObjectWrite.Written() : new org.totipo.spi.ObjectWrite.AlreadyPresentExact();
         }
-        @Override public void close() { publicationClosed = true; }
-    }
-    private final class Bootstrap implements VaultBootstrapReplacementStorage {
-        @Override public InputStream openCanonicalRead() throws IOException {
-            if (readUnavailable) throw new IOException("Unavailable bootstrap");
-            return bootstrap == null ? null : bootstrapStream(bootstrap);
-        }
-        @Override public StagedBootstrap stageInitial(byte[] bytes) throws IOException {
-            if (failBeforeStage) throw new IOException("Stage unavailable");
-            return new Stage(bytes);
-        }
-        @Override public StagedReplacement stageReplacement(byte[] bytes) throws IOException {
-            if (failBeforeStage) throw new IOException("Stage unavailable");
-            if (staleReplacement) bootstrap = bootstrap.clone();
-            if (staleReplacement) bootstrap[bootstrap.length - 1] ^= 1;
-            afterReplacementStage.run();
-            return new Stage(bytes);
-        }
-        @Override public void close() { bootstrapClosed = true; }
-    }
-    private final class Stage implements VaultBootstrapStorage.StagedBootstrap, VaultBootstrapReplacementStorage.StagedReplacement {
-        private final byte[] bytes;
-        Stage(byte[] bytes) { this.bytes = bytes.clone(); }
-        @Override public InputStream openRead() { return bootstrapStream(Arrays.copyOf(bytes, bytes.length + stagedTrailingBytes)); }
-        @Override public void installInitialDurably() throws IOException {
+        @Override public org.totipo.spi.VaultCreate createVault(byte[] bytes) {
+            if (failCreateBeforeMutation) return new org.totipo.spi.VaultCreate.Failed(org.totipo.spi.StoreFailure.UNAVAILABLE);
             initialInstallAttempts++;
-            if (bootstrap != null) throw new IOException("Exists");
+            if (bootstrap != null) return new org.totipo.spi.VaultCreate.AlreadyPresent();
             bootstrap = bytes.clone();
-            if (failReplacement) throw new IOException("Lost acknowledgement");
+            return failCreate ? new org.totipo.spi.VaultCreate.Uncertain(org.totipo.spi.StoreFailure.UNAVAILABLE)
+                    : new org.totipo.spi.VaultCreate.Created();
         }
-        @Override public void replaceCanonicalDurably() throws IOException {
-            replacementAttempts++;
-            bootstrap = bytes.clone();
-            if (failReplacement) throw new IOException("Lost acknowledgement");
-        }
-        @Override public void close() { }
+        @Override public void close() { publicationClosed = true; bootstrapClosed = true; }
     }
-    private InputStream bootstrapStream(byte[] bytes) {
-        return new InputStream() {
-            private final ByteArrayInputStream source = new ByteArrayInputStream(bytes);
-            private int consumed;
-            private void count(int read) {
-                if (read > 0) consumed += read;
-                maxBootstrapRead = Math.max(maxBootstrapRead, consumed);
-                if (consumed > bootstrapReadLimit) throw new AssertionError("Unbounded bootstrap read");
-            }
-            @Override public int read() { int value = source.read(); count(value < 0 ? 0 : 1); return value; }
-            @Override public int read(byte[] target, int offset, int length) {
-                int read = source.read(target, offset, length); count(read); return read;
-            }
-        };
+    private static org.totipo.spi.BoundedRead read(byte[] bytes, int expected) {
+        if (bytes == null) return new org.totipo.spi.BoundedRead.Absent();
+        if (bytes.length < expected) return new org.totipo.spi.BoundedRead.Undersized(bytes.length);
+        if (bytes.length > expected) return new org.totipo.spi.BoundedRead.Oversized();
+        return new org.totipo.spi.BoundedRead.Present(bytes);
     }
     private static void await(CountDownLatch latch) throws IOException {
         if (latch == null) return;

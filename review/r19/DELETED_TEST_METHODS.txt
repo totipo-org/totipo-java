@@ -1,0 +1,113 @@
+Removed/renamed test declarations; semantic replacements are described in the report.
+core/src/test/java/org/totipo/api/PrivateNioWorkflowTest.java | @Test void createPublishRewrapAndReopenPrivateReplica() throws Exception {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void passwordAuthenticationStaleFailureUncertaintyAndReopen() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void passwordChangeRejectsTrailingOrShortBaseWithBoundedRead() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void passwordChangeRejectsCanonicalTrailingDataAddedBeforeComparison() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void stagedReplacementWithTrailingDataIsRejectedBeforeReplacement() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void stagedInitialBootstrapWithTrailingDataIsRejectedBeforeInstallation() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void canonicalDisappearanceBeforeReplacementIsFailedNotStale() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void unusableCurrentObservationFailsWhileExactChangedBytesAreStale() {
+core/src/test/java/org/totipo/api/PublicApiTest.java | @Test void exactProtocolLengthCreationAndPasswordReplacementRemainSuccessful() {
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | @Test void successfulCreateTransfersOwnershipAndClosesStage() {
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | void createValidatesWhatWasStagedBeforeAnyCanonicalMutation(String mode) {
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | void passwordChangeMapsReplacementCertainty(String mode) {
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | void currentComparisonAndStageValidationRemainInCore(String mode) {
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | @Test void stagingCleanupFailureDoesNotDowngradeAcknowledgedCanonicalMutation() {
+core/src/test/java/org/totipo/conformance/R18ProfileIntegrityTest.java | @Test void movingProfileRequiresExactlyThePhysicalManifestCases() throws Exception {
+core/src/test/java/org/totipo/format/CryptoSupportTest.java | void fingerprintUsesDirectRootHmacAndExactDomain() throws Exception {
+core/src/test/java/org/totipo/format/DiscoverySourceTest.java | void collidingDistinctIdsSortDeterministicallyAndDuplicatesStillFail() throws Exception {
+core/src/test/java/org/totipo/format/FakeV1ObjectPublicationStore.java | void seed(ObjectId id, byte[] bytes) { objects.put(id, bytes.clone()); }
+core/src/test/java/org/totipo/format/TokenNioWorkflowTest.java | @Test void exactExistingIsReadOnlyAndCollisionRemainsUntouched() throws Exception {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | void exactBoundedReadingAndClose(int size) {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | void unavailableCandidateAndSnapshotCloseDoNotDiscardIndependentValidObjects(String mode) throws Exception {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | @Test void closeFailureAfterValidationRetainsTheValidToken() {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | @Test void namespaceFailureAndNonprogressAreDiagnostics() {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | @Test void envelopeFailuresAndAuthenticatedGrammarFailureRemainDistinct() throws Exception {
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | @Test void readerWipesEnvelopeResultWithoutChangingCallerRootOrToken() {
+core/src/test/java/org/totipo/format/V1ObjectPublicationStoreTest.java | @Test void snapshotOwnershipNoReplaceAndClose() throws Exception {
+core/src/test/java/org/totipo/format/V1ObjectPublicationStoreTest.java | @Test void wrongLengthNullUnsafeAndWrongSizedExistingTargetsFail() throws Exception {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void wiped() { for (var bytes : buffers) assertArrayEquals(new byte[bytes.length], bytes); }
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void creationDrawsIndependentFieldsAndReturnsOwnedRoot() throws Exception {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void openOwnsPrivateRootAndCloseWipesItWithoutDiagnostics() throws Exception {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void openSeparatesAbsenceUnavailableMalformedPasswordAndAuthentication() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void readIsBoundedAndMalformedLengthNeverReachesKdf(int length) {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void badMagicVersionAndPasswordNeverReachKdf() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void preflightAndAuthenticationFailuresDoNotDrawEntropyOrStage() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void memoryValidationMustSucceedBeforeStaging() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void tamperedStageIsNeverPublished(boolean replacing) {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void ambiguousAcknowledgementNeverSucceedsAndLaterOpenSeesActualBytes(boolean residue) {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void sameAndEmptyPasswordsAreValidRewrapsAndEntropyNeverIncludesRoot() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void immediateReobservationControlsReplacement(String change) {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void stageFailureAndCleanupFailureDoNotInventSuccessOrUndoDurableSuccess() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | void independentlyValidOrWrongLengthStageCannotReplaceIntendedBytes(String mutation) {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void exactBytesAppearingAtInstallationStillDoNotCountAsSuccessfulCreation() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void entropyFailureWipesTemporaryBuffersAndNeverStages() {
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | @Test void emptyPasswordCreationAndMaxLengthUtf8AreProtocolInputs() {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void emptyRootCreateCloseReopenUsesOnlyCanonicalAndExactGeneratedRoot() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void orphanObjectsAndBootstrapLookalikesNeverGateOrChangeCanonicalWorkflows() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void rewrapPreservesRootFingerprintAndHistoricalWrapperStillWorks() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | void noReplaceCreationNeverOverwritesExistingOrRacingEntry(String kind) throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | void deterministicConcurrentReplacementIsStaleForSameOrDifferentRoot(boolean differentRoot) throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | void changedOrUnsafeCurrentIsNeverReplaced(String kind) throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | void backendFailuresAreHonestAndNoAutomaticRetryOrRollbackOccurs(String failure) throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void replacementDirectoryFailureMayLeaveNewWrapperButMustReturnFailed() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void createOpenPublishReopenGraphRewrapReopenLeavesTokensExactlyUnchanged() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void independentVaultsHaveDifferentFingerprintsAndCannotAuthenticateEachOthersObjects() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void unusableTokenNamespaceIsNotAVaultOperationGate() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void conflictingTokensAndMissingParentsDoNotGateRewrapOrChangeGraph() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | @Test void corruptCompletedNioStageIsRejectedBeforeInstall() throws Exception {
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | void nioCanonicalReadsStopAt88BytesAndNeverInvokeKdfForWrongLength(int length) throws Exception {
+core/src/test/java/org/totipo/format/VaultVectorChecks.java | static void check(VectorCaseLoader.Case vector) {
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | @Test void absentAndEmptyNamespacesProduceNoCandidatesAndNoWrites() throws Exception {
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | @Test void rootAndNamespaceMustBeObservedDirectories() throws Exception {
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | @Test void onlyDirectCanonicalRegularCandidatesAreObserved() throws Exception {
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | @Test void finalSymlinksAndSymlinkReplacementAreNotFollowed() throws Exception {
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | @Test void openersReadCurrentBytesAndReportDisappearance() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void newPublicationSyncsCreatedParentThenContainingDirectory() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void exactExistingNeedsNoDurabilityBarrier() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | void vaultInstallationRequiresInjectedBarrierAfterCompleteBytes(boolean replacement) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void failedParentCapabilityIsRetriedBeforeCreatingTemporary() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void canonicalReadsAreBoundedAndNeedNoBarrier() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void vaultUnsupportedLinkCannotInstallCanonical() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | @Test void nonDefaultProviderIsAcceptedButUnsupportedLinksFailWithoutFallback() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioApplicationPublicationTest.java | @Test void exactExistingApplicationAcknowledgementReestablishesDirectoryBarriers() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioApplicationPublicationTest.java | @Test void failedExactExistingBarrierCannotAcknowledgeSaved() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | @Test void uppercaseVaultIsAbsentAndNeverReplacedOrMutated() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | @Test void uppercaseNamespaceIsIgnoredAndLazyPublicationCreatesExactSibling() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | void namespaceCollisionRequiresExactlySpelledWinner(boolean exactWinner) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | @Test void initialVaultAliasCollisionFailsWithoutOverwriting() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | void collisionReopensOnlyExactWinner(boolean exactWinner) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void publicPrivateFactoryInstallsAndReopensWithDefaultDurability() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void sharedModeStillDependsOnHardLinksAndNeverFallsBack() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void privateModeDoesNotCallHardLinkSeams() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | void existingVaultIsPreservedIncludingWrongKinds(String kind) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void targetAppearingAfterOuterAbsenceCheckIsNotReplaced() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void partialProviderMoveFailureRemainsUncertainWithoutCanonicalCleanup() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void injectedMoveCollisionUsesExactWinnerAndRejectsAlias() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | void moveInvocationErrorsAreUncertainEvenIfInjectedBeforeEffect(boolean afterEffect) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | void vaultForceFailureClassification(String point) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void vaultMissingRootPreconditionIsDefiniteFailure() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | @Test void initialInstallUsesActualStageAndReplacementRetainsFallback() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | @Test void newPublicationIsCompleteForcedExclusiveAndExistingAcknowledgesDurability() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | void existingAcknowledgementRequiresDurabilityAndExactPostBarrierBytes(String mode) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | @Test void inputSnapshotAndClosedStore() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | void exactExistingReadIsBounded(long size) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | void faultLeavesConservativeOutcomeAndNoRollback(String point) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | @Test void failedRootBarrierIsRetriedAndUnsupportedHardLinksHaveNoFallback() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | void twoPublishersNeverOverwrite(boolean same) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void preparationIsPrivateAndCloseAbandonsIt() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | void stagedReadBackFreshlyObservesActualRepresentation(String mode) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void prepareFailureDoesNotChangeCanonical() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void inaccessibleStagingNamespaceIsUnavailable() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void initialInstallNeverOverwritesAndConsumesHandle() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void vaultCaseAliasCollisionIsNotAlreadyPresent() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | void canonicalMutationAcknowledgementFailureIsUncertain(boolean replace) throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void replacementPreconditionFailureIsDefiniteAndHasNoStaleMeaning() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void initialPreconditionFailureIsDefinite() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void replacementUsesSameStageAndAllowsNonAtomicProvider() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void closedStoreCleansStagesAndNeverCanonical() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | @Test void nonAtomicPartialReplacementIsUncertainAndNeverRolledBack() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java | @Test void stagedBytesArePrivateCompleteAndNoReplacePublicationIsDurable() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java | @Test void stageAndDirectoryFailuresAreConservativeAndCloseCleansStages() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java | @Test void atomicReplacementChecksObservedCanonicalAndDoesNotRestoreOldBytes() throws Exception {
+storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java | @Test void unsupportedAtomicMoveHasNoOverwriteFallback() throws Exception {

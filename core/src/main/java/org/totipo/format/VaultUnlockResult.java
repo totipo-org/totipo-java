@@ -32,15 +32,6 @@ final class VaultUnlockResult implements AutoCloseable {
     /** Caller owns the copy. No key bytes appear in toString, errors, or logs. */
     byte[] root() { requireOpen(); return root == null ? null : root.clone(); }
 
-    /** Exact v1 fingerprint of the authenticated root; caller owns the result. */
-    byte[] fingerprint() {
-        requireOpen();
-        if (root == null) {
-            throw new IllegalStateException("No authenticated root");
-        }
-        return CryptoSupport.vaultFingerprint(root);
-    }
-
     private void requireOpen() {
         if (closed) { throw new IllegalStateException("Unlock result closed"); }
     }

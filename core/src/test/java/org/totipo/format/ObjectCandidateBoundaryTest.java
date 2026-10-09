@@ -12,10 +12,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class ObjectCandidateBoundaryTest {
     private static ApplicationSession session(byte[] root) throws InterruptedException {
         var observed = new CountDownLatch(1);
-        var session = new ApplicationSession(root, new VaultTestStore(), () -> {
-            observed.countDown();
-            return new DiscoverySource.Snapshot(List.of(), DiscoverySource.SnapshotIssue.NONE);
-        }, new PublicationTestStore());
+        var session = new ApplicationSession(root, new VaultId(new byte[32]), new TestStore() {
+            @Override public org.totipo.spi.ObjectScan scanObjects() {
+                observed.countDown(); return new org.totipo.spi.ObjectScan.Complete(List.of());
+            }
+        });
         assertTrue(observed.await(10, TimeUnit.SECONDS));
         return session;
     }
@@ -37,7 +38,7 @@ class ObjectCandidateBoundaryTest {
     }
 
     @Test void physicalBoundsAndAeadFailureAreInvalidAndDoNotMutateInput() throws Exception {
-        var object = TokenStoreReaderTest.object();
+        var object = V1EnvelopeWriter.seal(TokenPublicationTest.root(), TokenWriter.write(TokenPublicationTest.plan(1).stages().get(0).token()));
         var id = new RevisionId(object.id().filename());
         try (var session = session(TokenPublicationTest.root())) {
             for (int length : new int[]{0, 1, 87, 1008, 1023, 1025, 100000}) {

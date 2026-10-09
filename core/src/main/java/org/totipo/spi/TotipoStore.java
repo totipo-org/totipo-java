@@ -11,6 +11,7 @@ public interface TotipoStore extends AutoCloseable {
     ObjectScan scanObjects();
     BoundedRead readObject(ObjectName name, int expectedBytes);
     ObjectWrite publishObject(ObjectName name, byte[] bytes);
-    VaultPrepare prepareVault(byte[] bytes);
+    /** Publish complete opaque bytes only if canonical vault is absent. Never replace. */
+    VaultCreate createVault(byte[] bytes);
     @Override void close();
 }

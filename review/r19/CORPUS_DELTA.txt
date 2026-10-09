@@ -1,0 +1,16 @@
+Removed IDs: ['v1.bootstrap.rewrap.001', 'v1.vault.replace-ambiguous.001', 'v1.vault.replace-equal.001', 'v1.vault.replace-stale.001', 'v1.vault.replace-unreadable.001']
+Added IDs: ['v1.bootstrap.known-answer-extra.001', 'v1.bootstrap.vault-id-mutation.001', 'v1.vault.create-different.001', 'v1.vault.create-revalidation-failed.001', 'v1.vault.create-wrong-type.001', 'v1.vault.object-exact-retry-unchanged.001', 'v1.vault.object-publication-unchanged.001']
+Changed case v1.bootstrap.ascii.001
+Changed case v1.bootstrap.empty.001
+Changed case v1.bootstrap.unicode.001
+Changed case v1.storage.ambiguous-publication.001
+Changed case v1.storage.exact-existing-publication.001
+Changed case v1.storage.missing-parent-publication.001
+Changed case v1.storage.new-publication.001
+Changed case v1.storage.non-exact-publication.001
+Changed case v1.storage.unreadable-target.001
+Changed case v1.vault.create-ambiguous.001
+Changed case v1.vault.create-empty.001
+Changed case v1.vault.create-existing.001
+Changed case v1.vault.create-orphans.001
+All common bootstrap password/salt/nonce/wrap-key/header/record bytes unchanged. All crypto/encoding/fold/graph/metadata/size/TOTP case files byte-identical.

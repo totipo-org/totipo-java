@@ -1,11 +1,11 @@
 package org.totipo.format;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.totipo.format.V1ObjectPublicationStore.PublicationResult.*;
+import static org.totipo.format.TokenPublicationTest.*;
+import org.totipo.spi.*;
 
-import org.totipo.storage.nio.NioDiscoverySource;
+import org.totipo.storage.nio.NioTotipoStore;
 import org.totipo.storage.nio.NioDurability;
-import org.totipo.storage.nio.NioV1ObjectPublicationStore;
 import org.totipo.storage.nio.ObjectPublicationFaults;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -39,14 +39,14 @@ class TokenNioWorkflowTest {
             Path sibling = Files.write(namespace.resolve(alias), sealed.bytes());
             var before = Files.readAttributes(sibling, BasicFileAttributes.class);
             assertTrue(read(directory).validatedTokens().isEmpty());
-            try (var store = NioV1ObjectPublicationStore.open(directory, new NioDurability())) {
-                assertEquals(PUBLISHED_NEW, store.publish(sealed.id(), sealed.bytes()));
+            try (var store = NioTotipoStore.open(directory, new NioDurability())) {
+                assertEquals(PUBLISHED_NEW, store.publishObject(new ObjectName(sealed.id().filename()), sealed.bytes()));
             }
-            try (var store = NioV1ObjectPublicationStore.open(directory, path -> fail("Exact retry must remain read-only"))) {
-                assertEquals(ALREADY_PRESENT_EXACT, store.publish(sealed.id(), sealed.bytes()));
+            try (var store = NioTotipoStore.open(directory, new NioDurability())) {
+                assertEquals(ALREADY_PRESENT_EXACT, store.publishObject(new ObjectName(sealed.id().filename()), sealed.bytes()));
             }
-            try (var snapshot = new NioDiscoverySource(directory).snapshot()) {
-                assertEquals(List.of(sealed.id()), snapshot.candidates().stream().map(DiscoverySource.Candidate::id).toList());
+            try (var store = NioTotipoStore.open(directory)) {
+                assertTrue(store.scanObjects().entries().stream().map(ObjectEntry::name).toList().contains(new ObjectName(sealed.id().filename())));
             }
             assertEquals(List.of(new ValidatedToken(stage.objectId(), stage.token())), read(directory).validatedTokens());
             assertArrayEquals(sealed.bytes(), Files.readAllBytes(sibling));
@@ -59,11 +59,11 @@ class TokenNioWorkflowTest {
     private static Path directory() throws IOException {
         return Files.createTempDirectory(Path.of("build"), "token-workflow-").toAbsolutePath();
     }
-    private static TokenStoreObservation read(Path directory) {
-        return TokenStoreReader.read(new NioDiscoverySource(directory), TokenPublicationTest.root());
+    private static TokenStoreObservation read(Path directory) throws IOException {
+        try (var store = NioTotipoStore.open(directory)) { return TokenStoreReader.read(store, TokenPublicationTest.root()); }
     }
     private static void publish(Path directory, TokenPublicationPlan plan) throws IOException {
-        try (var store = NioV1ObjectPublicationStore.open(directory, new NioDurability())) {
+        try (var store = NioTotipoStore.open(directory, new NioDurability())) {
             assertEquals(Collections.nCopies(plan.stages().size(), PUBLISHED_NEW),
                     TokenPublisher.publish(plan, TokenPublicationTest.root(), store));
         }
@@ -92,7 +92,7 @@ class TokenNioWorkflowTest {
             Files.createSymbolicLink(namespace.resolve("f".repeat(64)), sibling.resolve(stage.objectId().filename()));
             var result = read(directory);
             assertEquals(List.of(new ValidatedToken(stage.objectId(), stage.token())), result.validatedTokens());
-            assertTrue(result.candidateDiagnostics().isEmpty());
+            assertEquals(List.of(new TokenStoreObservation.CandidateDiagnostic(ObjectId.fromFilename("f".repeat(64)), TokenStoreObservation.Reason.UNAVAILABLE)), result.candidateDiagnostics());
             assertTrue(result.snapshotDiagnostics().isEmpty());
         } finally { StorageVectorChecks.deleteTree(directory); }
     }
@@ -150,7 +150,7 @@ class TokenNioWorkflowTest {
             assertEquals(width + plan.stages().size(), after.objects().size());
             assertTrue(after.unresolvedParents().isEmpty());
             for (var stage : plan.stages()) assertEquals(TokenPublicationTest.metadata(), stage.token().metadata());
-            try (var store = NioV1ObjectPublicationStore.open(directory, path -> fail("Exact retry requested persistence"))) {
+            try (var store = NioTotipoStore.open(directory, new NioDurability())) {
                 assertEquals(Collections.nCopies(plan.stages().size(), ALREADY_PRESENT_EXACT),
                         TokenPublisher.publish(plan, TokenPublicationTest.root(), store));
             }
@@ -158,7 +158,7 @@ class TokenNioWorkflowTest {
         } finally { StorageVectorChecks.deleteTree(directory); }
     }
 
-    @Test void exactExistingIsReadOnlyAndCollisionRemainsUntouched() throws Exception {
+    @Test void exactExistingIsAcknowledgedAndCollisionRemainsUntouched() throws Exception {
         Path directory = directory();
         try {
             var plan = TokenPublicationTest.plan(0); publish(directory, plan);
@@ -167,18 +167,18 @@ class TokenNioWorkflowTest {
             byte[] bytes = Files.readAllBytes(target);
             var attributes = Files.readAttributes(target, BasicFileAttributes.class);
             var permissions = Files.getPosixFilePermissions(target);
-            var faults = new ObjectPublicationFaults(path -> fail("Exact target must not be forced"));
+            var faults = new ObjectPublicationFaults(new NioDurability());
             try (var store = faults.open(directory)) {
                 assertEquals(List.of(ALREADY_PRESENT_EXACT), TokenPublisher.publish(plan, TokenPublicationTest.root(), store));
             }
-            assertEquals(List.of("snapshot", "mkdir", "existing-read"), faults.events);
+            assertEquals(List.of("snapshot", "mkdir", "existing-read", "existing-force", "existing-directory-sync", "existing-root-sync", "existing-confirm"), faults.events);
             var after = Files.readAttributes(target, BasicFileAttributes.class);
             assertEquals(attributes.fileKey(), after.fileKey());
             assertEquals(attributes.lastModifiedTime(), after.lastModifiedTime());
             assertEquals(permissions, Files.getPosixFilePermissions(target));
             assertArrayEquals(bytes, Files.readAllBytes(target));
             byte[] wrong = bytes.clone(); wrong[0] ^= 1; Files.write(target, wrong);
-            try (var store = NioV1ObjectPublicationStore.open(directory, new NioDurability())) {
+            try (var store = NioTotipoStore.open(directory, new NioDurability())) {
                 assertThrows(IOException.class, () -> TokenPublisher.publish(plan, TokenPublicationTest.root(), store));
             }
             assertArrayEquals(wrong, Files.readAllBytes(target));
@@ -224,7 +224,7 @@ class TokenNioWorkflowTest {
             }
             assertEquals(3, stages[0]);
             assertEquals(failure.equals("before-link") ? 2 : 3, read(directory).validatedTokens().size());
-            try (var store = NioV1ObjectPublicationStore.open(directory, new NioDurability())) {
+            try (var store = NioTotipoStore.open(directory, new NioDurability())) {
                 assertEquals(List.of(ALREADY_PRESENT_EXACT, ALREADY_PRESENT_EXACT,
                         failure.equals("before-link") ? PUBLISHED_NEW : ALREADY_PRESENT_EXACT, PUBLISHED_NEW),
                         TokenPublisher.publish(plan, TokenPublicationTest.root(), store));

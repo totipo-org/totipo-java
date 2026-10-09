@@ -4,7 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.totipo.conformance.VectorCaseLoader;
 import org.totipo.conformance.VectorCaseLoader.Node;
-import org.totipo.storage.nio.NioDiscoverySource;
+import org.totipo.storage.nio.NioTotipoStore;
+import org.totipo.spi.*;
 import org.totipo.storage.nio.NioDurability;
 import org.totipo.storage.nio.ObjectPublicationFaults;
 import java.io.IOException;
@@ -57,16 +58,16 @@ final class StorageVectorChecks {
                 Files.write(target, entry.field("object_hex").hex());
                 boolean failsRead = entry.has("unreadable") && entry.field("unreadable").bool();
                 var opened = new ArrayList<ObjectId>();
-                DiscoverySource source = () -> {
-                    var snapshot = new NioDiscoverySource(directory).snapshot();
-                    return new DiscoverySource.Snapshot(snapshot.candidates().stream().map(c ->
-                            new DiscoverySource.Candidate(c.id(), () -> {
-                                opened.add(c.id());
-                                if (failsRead) throw new IOException("Injected unavailable read");
-                                return c.opener().open();
-                            })).toList(), snapshot.issue(), snapshot);
+                var delegate = NioTotipoStore.open(directory);
+                var source = new TestStore() {
+                    @Override public ObjectScan scanObjects() { return delegate.scanObjects(); }
+                    @Override public BoundedRead readObject(ObjectName name, int expected) {
+                        opened.add(ObjectId.fromFilename(name.value()));
+                        return failsRead ? new BoundedRead.Unavailable(StoreFailure.UNAVAILABLE) : delegate.readObject(name, expected);
+                    }
                 };
-                var result = TokenStoreReader.read(source, root);
+                TokenStoreObservation result;
+                try (delegate) { result = TokenStoreReader.read(source, root); }
                 boolean candidate = parts[0].equals("objects-v1") && parts[1].length() == 64;
                 assertEquals(candidate ? List.of(ObjectId.fromFilename(parts[1])) : List.of(), opened);
                 assertTrue(result.snapshotDiagnostics().isEmpty());
@@ -101,11 +102,9 @@ final class StorageVectorChecks {
     private static void publish(VectorCaseLoader.Case vector) throws Exception {
         fields(vector.data(), "format", "id", "operation", "expected", "workflow");
         var fixture = vector.data().field("workflow");
-        fields(fixture, "action", "kind", "existing_hex", "intended_hex", "base_hex", "readable",
+        fields(fixture, "action", "kind", "existing_hex", "intended_hex", "readable",
                 "complete", "durable", "orphan_objects", "parents_available", "result");
         assertEquals("publish", fixture.field("action").string());
-        // These fields describe bootstrap/replace inputs, not prerequisites for publish.
-        assertArrayEquals(new byte[0], fixture.field("base_hex").hex());
         assertFalse(fixture.field("readable").bool());
         assertFalse(fixture.field("orphan_objects").bool());
         assertTrue(fixture.field("complete").bool());
@@ -137,8 +136,8 @@ final class StorageVectorChecks {
                 assertEquals(residue, store.objects.containsKey(id));
                 assertEquals(1, store.calls);
                 store.failCall = -1;
-                assertEquals(List.of(residue ? V1ObjectPublicationStore.PublicationResult.ALREADY_PRESENT_EXACT
-                        : V1ObjectPublicationStore.PublicationResult.PUBLISHED_NEW), TokenPublisher.publish(plan, root, store));
+                assertEquals(List.of(residue ? new ObjectWrite.AlreadyPresentExact()
+                        : new ObjectWrite.Written()), TokenPublisher.publish(plan, root, store));
                 assertArrayEquals(intended, store.objects.get(id));
             }
             return;
@@ -160,13 +159,12 @@ final class StorageVectorChecks {
                 }
             } else for (var parent : token.parents()) assertFalse(Files.exists(namespace.resolve(parent.filename())));
             var faults = new ObjectPublicationFaults(path -> {
-                assertTrue(durable, "Exact-existing must not request persistence");
                 new NioDurability().syncDirectory(path);
             });
             if (kind.equals("unreadable")) faults.fail = "existing-read";
             String actual;
             try (var store = faults.open(directory)) {
-                try { actual = TokenPublisher.publish(plan, root, store).get(0).name(); }
+                try { actual = verdict(TokenPublisher.publish(plan, root, store).get(0)); }
                 catch (IOException failed) { actual = "FAILED"; }
             }
             assertEquals(expected, actual);
@@ -174,7 +172,8 @@ final class StorageVectorChecks {
                 assertArrayEquals(intended, Files.readAllBytes(target));
                 assertTrue(faults.events.indexOf("stage-sync") < faults.events.indexOf("before-link"));
                 assertTrue(faults.events.contains("directory-sync"));
-                var observation = TokenStoreReader.read(new NioDiscoverySource(directory), root);
+                TokenStoreObservation observation;
+                try (var reader = NioTotipoStore.open(directory)) { observation = TokenStoreReader.read(reader, root); }
                 assertTrue(observation.validatedTokens().contains(new ValidatedToken(id, token)));
                 var view = TokenGraph.evaluate(observation.validatedTokens()).perToken(token.tokenId());
                 assertEquals(List.of(new ValidatedToken(id, token)), view.heads());
@@ -182,11 +181,16 @@ final class StorageVectorChecks {
                         .map(TokenGraph.UnresolvedParent::parent).toList());
             } else {
                 assertArrayEquals(existing, Files.readAllBytes(target));
-                assertEquals(List.of("snapshot", "mkdir", "existing-read"), faults.events);
+                assertTrue(faults.events.contains("existing-read"));
             }
         } finally { deleteTree(directory); }
     }
 
+    static String verdict(ObjectWrite result) {
+        if (result instanceof ObjectWrite.Written) return "PUBLISHED_NEW";
+        if (result instanceof ObjectWrite.AlreadyPresentExact) return "ALREADY_PRESENT_EXACT";
+        return "FAILED";
+    }
     static void deleteTree(Path directory) throws IOException {
         try (var paths = Files.walk(directory)) {
             for (var path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);

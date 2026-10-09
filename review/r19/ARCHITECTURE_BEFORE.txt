@@ -1,0 +1,77 @@
+core/src/main/java/org/totipo/ObjectCandidateValidation.java | fingerprint
+core/src/main/java/org/totipo/PasswordChangeResult.java | PasswordChangeResult
+core/src/main/java/org/totipo/PublicationRetry.java | base
+core/src/main/java/org/totipo/Totipo.java | ApplicationVaults, TotipoStore, NioTotipo, orphan
+core/src/main/java/org/totipo/VaultSession.java | changePassword, PasswordChangeResult, fingerprint
+core/src/main/java/org/totipo/format/ApplicationSession.java | changePassword, PasswordChangeResult, fingerprint, VaultBootstrap, ApplicationVaults, DiscoverySource, V1ObjectPublicationStore, base
+core/src/main/java/org/totipo/format/ApplicationVaults.java | PasswordChangeResult, VaultBootstrap, StoreAdapter, ApplicationVaults, DiscoverySource, V1ObjectPublicationStore, TotipoStore, base, replace
+core/src/main/java/org/totipo/format/CryptoSupport.java | fingerprint
+core/src/main/java/org/totipo/format/DiscoverySource.java | DiscoverySource, base, replace
+core/src/main/java/org/totipo/format/StoreAdapter.java | VaultBootstrap, VaultPrepare, PreparedVault, VaultInstall, VaultReplace, StoreAdapter, DiscoverySource, V1ObjectPublicationStore, TotipoStore, replace
+core/src/main/java/org/totipo/format/TokenPublisher.java | V1ObjectPublicationStore
+core/src/main/java/org/totipo/format/TokenStoreObservation.java | DiscoverySource
+core/src/main/java/org/totipo/format/TokenStoreReader.java | DiscoverySource
+core/src/main/java/org/totipo/format/V1ObjectPublicationStore.java | V1ObjectPublicationStore
+core/src/main/java/org/totipo/format/VaultBootstrap.java | VaultBootstrap
+core/src/main/java/org/totipo/format/VaultBootstrapReplacementStorage.java | VaultBootstrap, replace
+core/src/main/java/org/totipo/format/VaultBootstrapStorage.java | VaultBootstrap, replace
+core/src/main/java/org/totipo/format/VaultBootstrapWriter.java | VaultBootstrap
+core/src/main/java/org/totipo/format/VaultLifecycle.java | changePassword, PasswordChangeResult, fingerprint, VaultBootstrap, base, replace
+core/src/main/java/org/totipo/format/VaultUnlockResult.java | fingerprint
+core/src/main/java/org/totipo/format/VaultUnlocker.java | VaultBootstrap
+core/src/main/java/org/totipo/spi/PreparedVault.java | PreparedVault, VaultInstall, VaultReplace, replace
+core/src/main/java/org/totipo/spi/TotipoStore.java | VaultPrepare, TotipoStore
+core/src/main/java/org/totipo/spi/VaultInstall.java | VaultInstall
+core/src/main/java/org/totipo/spi/VaultPrepare.java | VaultPrepare, PreparedVault
+core/src/main/java/org/totipo/spi/VaultReplace.java | VaultReplace
+core/src/test/java/org/totipo/api/PrivateNioWorkflowTest.java | changePassword, PasswordChangeResult, fingerprint, openPrivate, TotipoStore, NioTotipo
+core/src/test/java/org/totipo/api/PublicApiTest.java | changePassword, PasswordChangeResult, fingerprint, NioTotipo, base, replace
+core/src/test/java/org/totipo/api/SpiApplicationTest.java | changePassword, PasswordChangeResult, fingerprint, VaultPrepare, PreparedVault, VaultInstall, VaultReplace, TotipoStore, replace
+core/src/test/java/org/totipo/conformance/SpecSnapshotIntegrityTest.java | replace
+core/src/test/java/org/totipo/conformance/VectorCaseLoader.java | base
+core/src/test/java/org/totipo/format/BootstrapVectorTest.java | fingerprint, VaultBootstrap
+core/src/test/java/org/totipo/format/CryptoSupportTest.java | fingerprint
+core/src/test/java/org/totipo/format/DiscoverySourceTest.java | DiscoverySource
+core/src/test/java/org/totipo/format/FakeV1ObjectPublicationStore.java | V1ObjectPublicationStore
+core/src/test/java/org/totipo/format/GraphFoldVectorChecks.java | base
+core/src/test/java/org/totipo/format/ObjectCandidateBoundaryTest.java | DiscoverySource
+core/src/test/java/org/totipo/format/PublicationTestStore.java | V1ObjectPublicationStore
+core/src/test/java/org/totipo/format/StorageVectorChecks.java | DiscoverySource, V1ObjectPublicationStore, orphan, base, replace
+core/src/test/java/org/totipo/format/TokenCodecTest.java | base, replace
+core/src/test/java/org/totipo/format/TokenNioWorkflowTest.java | DiscoverySource, V1ObjectPublicationStore
+core/src/test/java/org/totipo/format/TokenPublicationTest.java | DiscoverySource, V1ObjectPublicationStore
+core/src/test/java/org/totipo/format/TokenStoreReaderTest.java | DiscoverySource
+core/src/test/java/org/totipo/format/TokenVectorChecks.java | base
+core/src/test/java/org/totipo/format/V1ObjectPublicationStoreTest.java | V1ObjectPublicationStore
+core/src/test/java/org/totipo/format/VaultBootstrapTest.java | VaultBootstrap
+core/src/test/java/org/totipo/format/VaultBootstrapWriterTest.java | fingerprint, VaultBootstrap
+core/src/test/java/org/totipo/format/VaultLifecycleTest.java | changePassword, PasswordChangeResult, fingerprint, VaultBootstrap, base, replace
+core/src/test/java/org/totipo/format/VaultNioWorkflowTest.java | changePassword, PasswordChangeResult, fingerprint, VaultBootstrap, DiscoverySource, V1ObjectPublicationStore, orphan, base, replace
+core/src/test/java/org/totipo/format/VaultTestStore.java | VaultBootstrap, replace
+core/src/test/java/org/totipo/format/VaultUnlockerTest.java | fingerprint, VaultBootstrap
+core/src/test/java/org/totipo/format/VaultVectorChecks.java | changePassword, PasswordChangeResult, fingerprint, VaultBootstrap, orphan, base, replace
+core/src/test/java/org/totipo/testing/MemoryVault.java | VaultBootstrap, ApplicationVaults, DiscoverySource, V1ObjectPublicationStore, replace
+storage-nio/src/main/java/org/totipo/storage/nio/NioApplicationPublication.java | V1ObjectPublicationStore, NioObjectStorage, StorageDurability
+storage-nio/src/main/java/org/totipo/storage/nio/NioCanonicalInstaller.java | PRIVATE_MOVE, NioCanonicalInstaller
+storage-nio/src/main/java/org/totipo/storage/nio/NioDiscoverySource.java | DiscoverySource
+storage-nio/src/main/java/org/totipo/storage/nio/NioDurability.java | StorageDurability
+storage-nio/src/main/java/org/totipo/storage/nio/NioObjectStorage.java | PRIVATE_MOVE, NioObjectStorage, NioCanonicalInstaller, StorageDurability
+storage-nio/src/main/java/org/totipo/storage/nio/NioTotipo.java | TotipoStore, NioTotipo, orphan
+storage-nio/src/main/java/org/totipo/storage/nio/NioTotipoStore.java | VaultPrepare, PreparedVault, VaultInstall, VaultReplace, openPrivate, PRIVATE_MOVE, NioVaultStorage, NioObjectStorage, NioCanonicalInstaller, StorageDurability, TotipoStore, NioTotipo, replace
+storage-nio/src/main/java/org/totipo/storage/nio/NioV1ObjectPublicationStore.java | V1ObjectPublicationStore, NioObjectStorage, StorageDurability
+storage-nio/src/main/java/org/totipo/storage/nio/NioVaultBootstrapStorage.java | VaultBootstrap, NioVaultStorage, StorageDurability, replace
+storage-nio/src/main/java/org/totipo/storage/nio/NioVaultStorage.java | PRIVATE_MOVE, NioVaultStorage, NioCanonicalInstaller, StorageDurability, replace
+storage-nio/src/main/java/org/totipo/storage/nio/StorageDurability.java | StorageDurability
+storage-nio/src/test/java/org/totipo/format/NioDiscoveryTest.java | DiscoverySource
+storage-nio/src/test/java/org/totipo/storage/nio/DurabilityContractTest.java | VaultBootstrap, V1ObjectPublicationStore, replace
+storage-nio/src/test/java/org/totipo/storage/nio/NioApplicationPublicationTest.java | V1ObjectPublicationStore
+storage-nio/src/test/java/org/totipo/storage/nio/NioExactNameTest.java | VaultBootstrap, DiscoverySource, V1ObjectPublicationStore, replace
+storage-nio/src/test/java/org/totipo/storage/nio/NioPrivateStoreTest.java | VaultPrepare, PreparedVault, VaultInstall, VaultReplace, openPrivate, PRIVATE_MOVE, NioVaultStorage, NioObjectStorage, NioCanonicalInstaller, TotipoStore, NioTotipo, replace
+storage-nio/src/test/java/org/totipo/storage/nio/NioPublicationTest.java | V1ObjectPublicationStore, replace
+storage-nio/src/test/java/org/totipo/storage/nio/NioSpiTest.java | VaultPrepare, PreparedVault, VaultInstall, VaultReplace, NioVaultStorage, NioObjectStorage, TotipoStore, NioTotipo, replace
+storage-nio/src/test/java/org/totipo/storage/nio/NioVaultStorageTest.java | VaultBootstrap, NioVaultStorage, replace
+storage-nio/src/test/java/org/totipo/storage/nio/RecordingDurability.java | StorageDurability
+storage-nio/src/testFixtures/java/org/totipo/storage/nio/ObjectPublicationFaults.java | V1ObjectPublicationStore, StorageDurability
+storage-nio/src/testFixtures/java/org/totipo/storage/nio/ReplacementStorageFaults.java | VaultBootstrap, StorageDurability
+storage-nio/src/testFixtures/java/org/totipo/storage/nio/VaultStorageFaults.java | VaultBootstrap, StorageDurability
+core/src/main/java/org/totipo/format/ObjectId.java | public identity type for legacy NIO adapters; constructor already internal

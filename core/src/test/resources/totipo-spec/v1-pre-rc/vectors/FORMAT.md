@@ -1,4 +1,4 @@
-# Portable v1/r18 case contract
+# Portable v1/r19 case contract
 
 `manifest.schema.json` and `case.schema.json` define strict JSON contracts.
 Unknown members, mixed operation payloads, invalid enum values, and omitted
@@ -44,9 +44,12 @@ physical-size, authentication, length, padding, keyed-ID, and grammar boundaries
 Unit tests additionally exercise malformed names, wrong roots, and fixture tampering.
 
 `bootstrap` provides exact password/root/salt/nonce, Argon2id wrap key, header,
-87-byte record, and VAULT_FINGERPRINT. Rewrap uses the same root with a different
-password/salt/nonce and retains the fingerprint. Fixed random values are public
-test material and must never be reused by live creation or rewrap.
+87-byte record, and VAULT_ID. Existing root-wrap known answers are preserved as
+source fixtures; their cryptographic fields are not regenerated for r19. Shared
+public fixture roots do not represent alternate legitimate same-vault bootstraps.
+Fixed inputs must never be reused by live creation. The mutation case includes
+`changed_record_hex` and `changed_vault_id_hex`: one flipped tag bit changes the
+public identity and fails authentication, never becoming a newer bootstrap.
 
 `totp` preserves the RFC 6238 Appendix B known answers for SHA-1/256/512, each with
 six rows. It includes the algorithm-specific ASCII secret, time, counter, exact
@@ -85,25 +88,26 @@ authenticated invalid grammar `INVALID`, or size/authentication failure
 `INVALID_STORAGE`. Ignored entries produce no class. Read/namespace errors are
 reported by the diagnostic flag; processing may still retain validated objects.
 
-`workflow` models backend outcomes for `publish`, `create`, or `replace`. Creation
-and replacement operate on exact lowercase `vault`; uppercase conceptual VAULT
-refers to its representation, never a pathname alias.
-The replacement workflow's `kind` describes the newly observed canonical entry;
-only `regular` permits comparison/replacement. A namespace observation accepts only
-`directory`; wrong types produce diagnostics and are not traversed. These observed
-entry-type rules do not mandate host race-hardening primitives.
+`workflow` models backend outcomes for `publish` or `create`. Creation operates
+on exact lowercase `vault`; conceptual VAULT is its representation, not a path
+alias. There is no replacement action or expected-old-wrapper field. An existing
+canonical entry always blocks creation and remains untouched.
 
-`durable` means the backend believes its required persistence work succeeded;
-`complete` means complete replacement/bootstrap bytes were constructed separately.
-Exact-existing publication succeeds with no new durability work, while non-exact
-existing entries remain untouched. Ambiguous failure returns `FAILED` without
-asserting absence. Parent availability and orphan-object presence are supplied
-independently and deliberately do not gate publication or creation.
+`durable` means required persistence work succeeded; `complete` means complete,
+locally validated bootstrap bytes were constructed separately. For creation,
+`readable` denotes successful post-publication exact canonical reread and wrap/root
+revalidation. The intended bytes are a complete 87-byte known answer; these backend
+booleans model trusted outcomes, not real syscalls or crash proof. Orphan-object
+presence blocks ordinary creation when canonical VAULT is absent. No exhaustive
+inventory or proof of globally empty storage is claimed.
 
-Replace compares freshly observed bytes to `base_hex`. These workflow byte strings
-are abstract representations, not bootstrap crypto fixtures. Unequal bytes mean
-`STALE`; inability to compare means failure. This models compare-before-replace,
-not atomic CAS, real filesystem effects, persistent pending state, or crash proof.
+Exact-existing object publication succeeds without fresh persistence, while
+non-exact entries remain untouched. Parent availability does not gate publication.
+`vault_hex`, when supplied for an object publication workflow, records canonical
+VAULT in the modeled store; the consumer requires exact preservation. Ambiguous
+failure returns `FAILED` without asserting absence or persistent pending state.
+Wrong namespace types remain diagnostic and are not traversed; observed entry-type
+rules do not mandate host race-hardening primitives.
 
 ## Deliberate maintenance
 
@@ -113,7 +117,7 @@ Normal checks never write cases. The explicit generator is:
 go run ./conformance/cmd/generate-vectors -root .
 ```
 
-It regenerates r18 fixtures and exact moving pins, preserves RFC TOTP files, and
+It regenerates r19 fixtures and exact moving pins, preserves RFC TOTP files, and
 removes physical cases no longer in its declared corpus. Review its inputs and all
 before/after bytes. It uses the Go crypto primitives shared with the consumer;
 this is reproducibility evidence, not an independent cryptographic implementation.

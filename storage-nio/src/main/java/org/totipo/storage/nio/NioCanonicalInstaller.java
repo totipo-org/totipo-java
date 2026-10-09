@@ -7,11 +7,11 @@ import java.nio.file.Path;
 
 /** Complete-stage installation policy. Private moves require exclusive application control. */
 enum NioCanonicalInstaller {
-    HARD_LINK, PRIVATE_MOVE;
+    HARD_LINK, COORDINATED_MOVE;
 
     void checkAbsent(Path target) throws IOException {
         // Refresh absence after complete construction. Enumeration errors are not absence.
-        if (this == PRIVATE_MOVE &&
+        if (this == COORDINATED_MOVE &&
                 NioFiles.findExactDirectChild(target.getParent(), target.getFileName().toString()).isPresent())
             throw new FileAlreadyExistsException(target.toString());
     }

@@ -20,7 +20,7 @@
     "spec_revision": {
       "type": "string",
       "pattern": "^r[0-9]+$",
-      "const": "r18"
+      "const": "r19"
     },
     "cases": {
       "type": "array",

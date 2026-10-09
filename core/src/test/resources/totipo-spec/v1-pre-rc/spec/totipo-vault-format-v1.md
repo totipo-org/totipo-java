@@ -1,17 +1,17 @@
 # Totipo Vault Format v1
 
-**Status:** design draft, revision 18  
+**Status:** design draft, revision 19  
 **Protocol version:** 1  
-**Revision:** r18  
+**Revision:** r19  
 **Scope:** encrypted complete-state TOTP assertions, causal interpretation,
 canonical encoding, cryptography, and durable store operations.
 
 The key words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY express normative
-requirements. This is a pre-RC revision; r18 hardens application safety, clarifies
-conformance scopes and compromise recovery, and edits presentation without changing
-r17 portable protocol semantics, wire bytes, or vector outcomes. Conformance
-scopes are defined in Section 20. Earlier revision history is historical, not an
-alternative grammar.
+requirements. This is a pre-RC semantic revision: r19 makes VAULT immutable and
+create-once, removes password rewrap and replacement, and introduces VAULT_ID.
+The bootstrap encoding and cryptography, object wire format, and TOKEN semantics
+are unchanged. Conformance scopes are defined in Section 20. Earlier revision
+history is historical, not an alternative grammar.
 
 **Historical note:** v0 was an unreleased design draft. v1 defines no migration
 protocol from v0. Historical artifacts are outside the v1 protocol.
@@ -45,15 +45,18 @@ establish validity of the observed representation, not completeness or freshness
 of the configured-store view.
 
 Totipo v1 does not guarantee that the configured store presents a complete or
-freshest view of vault history. A store may omit, remove, replay, restore, or
-replace previously valid objects or VAULT representations without v1 necessarily
-being able to establish that a fresher valid state once existed. v1 provides no
-cryptographic rollback or deletion resistance for history no longer presented by
-the configured store. A valid older representation may still authenticate
-correctly. Without independent freshness/history evidence, v1 cannot in general
-distinguish it from the freshest valid representation. Immutable content
-addressing authenticates object identity; it does not authenticate the observed
-set or its freshness.
+freshest view of object history. A store may hide or delete VAULT, substitute
+another VAULT, or return malformed VAULT bytes. It may hide, delete, or return
+malformed objects, replay stale subsets of object history, and present incomplete
+observations. v1 provides no cryptographic availability, global freshness,
+rollback, or deletion resistance for object history no longer presented by the
+configured store. Valid older objects may still authenticate correctly; content
+addressing authenticates object identity, not the observed set or its freshness.
+
+One vault has only one legitimate immutable canonical VAULT. A different
+representation is another vault or invalid/substituted storage evidence, never
+a newer version of that vault. This removes choosing among legitimate bootstrap
+generations; it adds no rollback resistance for object availability.
 
 This limitation MUST NOT weaken validation of observed candidate material:
 applicable path/name/type rules, bounded reads, physical size, AEAD authentication,
@@ -77,8 +80,8 @@ Protocol correctness MUST NOT depend on sync acknowledgement, peer count, remote
 completion, provider snapshots, conflict-copy names, or remote version retention.
 Local publication establishes no remote propagation or globally complete history.
 The success, durability acknowledgement, and ambiguous-failure requirements for
-immutable TOKEN publication, VAULT creation, and VAULT replacement (Sections 7,
-8, and 18) remain mandatory; they describe what success means when Totipo writes,
+immutable TOKEN publication and VAULT creation (Sections 7
+and 18) remain mandatory; they describe what success means when Totipo writes,
 not what history the configured environment continues to present later.
 
 **Informative deployment note:** Freshness, rollback detection, retained history,
@@ -126,7 +129,7 @@ deliberately traversed as one. The observed-entry rules are:
 
 | Canonical entry | Accepted observed type | Absence |
 | --- | --- | --- |
-| `vault` | regular file only | creation may be attempted |
+| `vault` | regular file only | creation subject to Section 7 |
 | `objects-v1` | directory only | no currently available namespace; lazy creation permitted |
 
 These are accepted observed entry-type requirements, not proof against malicious
@@ -143,10 +146,15 @@ files, temporary/conflict names, and unrelated names. Metadata is not authentica
 
 Unknown sibling namespaces are outside v1 interpretation; their presence alone
 creates no semantic state or operation block. Do not recursively scan them for
-v1 objects. `objects-v1/` MAY be created lazily. Different roots MUST NOT
-intentionally share this namespace. Observed orphan files do not prevent initial
-VAULT creation; interactive applications SHOULD warn and seek explicit confirmation
-as specified in Section 7.
+v1 objects. `objects-v1/` MAY be created lazily. Independent vaults MUST NOT
+intentionally share this namespace. Observed plausible current-family object
+candidates block ordinary creation when VAULT is absent (Section 7).
+
+VAULT and each `objects-v1/<OBJECT_ID>` entry are create-once and immutable.
+Totipo v1 protocol state is create-only after vault initialization: no
+protocol-visible durable entry is intentionally replaced in-place. External
+actors and storage can still mutate or delete bytes; the protocol does not
+prevent such interference.
 
 ## 4. Cryptographic suite
 
@@ -197,10 +205,19 @@ format-valid vaults unreadable.
 
 ## 6. Root and bootstrap encoding
 
-At creation, generate `K_root = CSPRNG(32 bytes)`. It is the cryptographic
-identity of one vault. The password wraps K_root; it is not the object encryption
-key. Changing K_root creates a different vault. Re-encryption does not undo prior
-credential disclosure; exposed credentials SHOULD be rotated with their issuers.
+At vault creation, implementations MUST generate `K_root = CSPRNG(32 bytes)`.
+K_root is permanent and immutable for the complete lifetime of that vault and
+MUST NOT be rotated in-place. The password wraps K_root; it is not the object
+encryption key. A different K_root always denotes a different cryptographic vault.
+
+A vault has exactly one immutable canonical VAULT representation and exactly one
+immutable K_root. The exact canonical VAULT representation is immutable for the
+lifetime of the vault. After successful initial publication, VAULT MUST NOT be
+intentionally modified, replaced, rewritten, rewrapped, or removed as part of
+ordinary vault operation. Any different canonical VAULT representation denotes
+another vault or invalid/substituted storage evidence; it is NEVER a newer version
+of the same vault. There are no VAULT versions, generations, bootstrap lineage,
+wrapper heads, or same-root alternate legitimate bootstrap representations.
 
 The bootstrap is exactly 87 bytes, not TLV:
 
@@ -214,7 +231,7 @@ offset  size  field
 71      16    WRAP_TAG
 ```
 
-On every creation or password rewrap, generate fresh CSPRNG salt (16 bytes) and
+At creation, generate fresh CSPRNG salt (16 bytes) and
 nonce (12 bytes). Derive K_wrap from the exact password and salt using Section 4.
 
 ```text
@@ -232,103 +249,121 @@ anyone possessing it may attempt password guesses.
 
 ## 7. Initial VAULT creation
 
-Canonical `vault` absence is sufficient to attempt creation. An observed wrong-type
-entry is not absence and MUST NOT be treated as permission to overwrite it.
-Implementations MUST NOT require exhaustive enumeration or proof that objects-v1
-is empty. Absence of canonical `vault` means no authenticated existing vault
-bootstrap is available there. Object-looking files alone cannot authenticate or
-recover an old vault; their presence MUST NOT by itself make fresh creation
-impossible. They are not deleted by creation. Independent-root objects will not
-authenticate under the newly generated root except with negligible probability.
+Creation requires canonical `vault` absence. An observed wrong-type entry is not
+absence and MUST NOT be treated as permission to overwrite it. If canonical
+VAULT already exists, creation MUST NOT replace it, even if it is exact-identical
+to the intended representation. Exact existing VAULT may be read and recognized;
+a different existing canonical VAULT is another vault or invalid/substituted
+storage evidence and blocks creation. No later lifecycle operation gains
+replacement authority.
 
-If canonical `vault` is absent and, during available observation, an interactive
-application observes one or more `objects-v1/` entries whose names are exactly 64
-lowercase hexadecimal characters, those entries are possible existing-vault
-evidence. The application SHOULD prominently warn that the location may contain
-an existing vault whose bootstrap is temporarily missing or unavailable. It SHOULD
-require explicit user confirmation before creating an unrelated new vault there. The warning SHOULD recommend checking synchronization
-and provider state and looking for the missing canonical `vault` first. These
-names are unauthenticated contextual evidence, not proof that the entries are
-valid objects or belong to one vault. This application safeguard does not grant
-untrusted storage a protocol-level veto over initialization.
+If canonical VAULT is absent but available observation reveals plausible
+current-family protocol object candidates under `objects-v1/` (the direct regular
+files with exactly 64 lowercase hexadecimal names defined in Section 3), ordinary
+vault creation MUST NOT silently initialize a new unrelated vault into that
+namespace. Implementations MUST require an explicit recovery, reconfiguration,
+or new-location workflow. Applications SHOULD explain that VAULT absence may be
+temporary or caused by incomplete/untrusted storage and recommend checking
+synchronization/provider state and recovering the missing canonical bootstrap.
+These candidates are unauthenticated contextual evidence, not proof of valid
+objects. They MUST NOT be classified as garbage merely because VAULT is absent.
+Creation MUST NOT delete them. This safeguard requires no exhaustive enumeration
+or proof that unseen objects are absent.
 
-Generate the root and construct the complete canonical representation separately.
-Use the strongest reasonable crash-safe publication mechanism available; MUST NOT
-knowingly overwrite an existing canonical `vault`. Attempt the required file/storage
-and containing-namespace persistence before reporting success. If successful
-creation without knowingly overwriting an observed existing `vault` cannot be
-established, MUST NOT report success. No specific atomic no-replace primitive or
-platform syscall is required. Creation completes when durable publication is
-believed successful; there is no subsequent mandatory local establishment step.
+Generate a fresh root, salt, and nonce; construct complete canonical VAULT bytes
+separately and validate them locally, including authenticating the wrap and
+checking the recovered root. Use the strongest reasonable crash-safe NO-REPLACE
+publication mechanism available. Implementations MUST NOT knowingly overwrite an
+existing canonical `vault`. Attempt required file/storage and containing-namespace
+persistence before reporting success. Reopen canonical `vault` as a regular file,
+compare its exact bytes to the intended representation, and revalidate its wrap
+and recovered root. Report success only after all required publication,
+persistence, and revalidation work succeeds. If no-replace publication or that
+verification cannot be established, MUST NOT report success. No particular
+platform syscall or atomic primitive is required.
 
-## 8. Password change and VAULT replacement
+An ambiguous failure MUST NOT be reported as success or as proof of absence.
+It creates no persistent pending protocol state or required journal. The next
+ordinary open validates canonical `vault` actually present; creation never
+acquires authority to replace it.
 
-Password change rewraps the same K_root with fresh salt and nonce. Construct the
-complete replacement separately; MUST NOT deliberately truncate and rewrite the
-canonical file in place. Use the strongest reasonable crash-safe replacement
-mechanism available and attempt replacement/file and containing-namespace
-persistence before success. Success means the implementation believes its required
-durability work succeeded.
+## 8. Credential changes and independent vaults
 
-The operation is based on `BASE`, the exact canonical bytes it successfully opened.
-Immediately before replacement, the implementation MUST re-observe the canonical
-`vault` as an acceptable regular file and compare the exact current bytes to BASE.
-If it cannot be re-observed as that regular file, or the exact-byte comparison
-cannot be performed, MUST NOT report success. If `CURRENT != BASE`, MUST NOT knowingly
-overwrite the intervening representation and MUST report stale/unsuccessful.
-VAULT_FINGERPRINT MUST NOT substitute for this exact-byte freshness comparison.
-No generation counter is introduced.
+v1 has no in-place password change and defines no password-rewrap operation.
+Changing the vault password, bootstrap/KDF policy, or K_root requires creation
+of a new independent vault. The destination MUST receive a fresh independently
+generated 32-byte K_root, a fresh Argon2 salt, a fresh wrap nonce, a newly created
+immutable VAULT, and a distinct vault identity. Reusing K_root for migration is
+forbidden. v1 fixes its KDF policy in Section 4; this rule does not permit alternate
+v1 KDF parameters or introduce a compatibility branch.
 
-Atomic compare-and-swap is not required. A residual race after comparison is
-accepted on stores without stronger facilities. Locks or native conditional
-replacement MAY harden an implementation; no remote serialization is implied.
+Migration MUST NOT replace the source VAULT, modify its object bag, convert the
+source namespace in place, or rewrap the source root. Source and destination are
+independent vaults; the source remains valid and unchanged. Applications may offer
+“Migrate to a new vault” as a higher-level workflow; that workflow is not required
+for r19 conformance.
 
-An ambiguous failure MUST NOT be reported as success or as proof that either
-representation won. It creates no persistent pending state or required journal.
-The next ordinary open interprets canonical `vault` actually present.
+### 8.1. Migration guidance (INFORMATIVE)
 
-Password rewrap does not rotate K_root. Historical valid wrappers for the same
-root may remain usable with their historical passwords; rewrap does not revoke
-old bootstrap copies or provide rollback protection. Applications MUST NOT
-describe password rewrap as a complete security reset or as recovery from
-suspected K_root compromise.
+This section is application guidance, not normative protocol state or a transfer
+protocol. A normal migration uses a separate destination store/namespace.
+Applications may copy selected validated semantic state or available history
+from an unlocked source into a new independent destination with fresh K_root.
+Copied data is re-authored and re-encrypted under the destination vault. The
+source VAULT and store remain unchanged. A destination need not retain any
+permanent protocol fact about its source; no migration ancestry, identifiers,
+receipts, or generations are added to VAULT or TOKEN.
 
-### 8.1. Suspected root compromise (informative)
+A client can migrate only source state/history it currently observes and validates.
+It cannot prove another device has no unsynchronized changes, that a provider is
+globally current, that an entirely absent token does not exist elsewhere, or that
+remote history has fully converged. Applications SHOULD disclose that migration
+reflects source data currently visible to that client and may omit not-yet-
+synchronized data. Applications SHOULD retain the old vault until the user has
+verified the new vault. These SHOULDs are informative application recommendations,
+not conformance requirements or claims of exhaustive migration.
 
-This guidance is non-normative; v1 defines no re-key or root-migration protocol.
-Changing K_root means creating a different vault. A recovery procedure is:
+Applications may choose what validated semantic state/history to copy and should
+describe that choice honestly. “Preserve available history” and “Copy current
+state” are application policy; the protocol imposes no history preservation,
+compaction, conflict-selection, or tombstone-discard policy.
 
-1. Create a fresh vault with a fresh independently generated root.
-2. Do not copy old encrypted object history as though doing so sanitizes it.
-3. Assume token credentials exposed through the compromised vault may themselves
-   be compromised.
-4. Rotate or reissue affected TOTP credentials with their issuers where security
-   recovery is required.
-5. Put replacement credentials into the new vault.
-6. Retire or delete the old store according to the user's storage provider and
-   retention capabilities, without assuming historical provider copies are erased.
+An old vault copy plus its password can continue to reveal the old vault. After
+migration with a fresh independently generated K_root, old VAULT plus old password
+does not derive the destination K_root. Copying does not revoke information an
+attacker already learned: re-encrypting the same compromised TOTP secret does not
+erase that knowledge. Issuer-side credential rotation is still required to revoke
+a compromised TOTP seed. Where root compromise is suspected, rotate or reissue
+affected credentials with their issuers and place replacement credentials in the
+new vault; do not treat old encrypted history as sanitized data. Provider retention
+may preserve old copies regardless of retirement/deletion of the old store.
 
-Decrypting an old TOTP secret and merely encrypting the same secret under a fresh
-K_root protects the new copy but does not revoke exposure of the old TOTP
-credential.
-
-## 9. Vault recognition
-
-Define the exact domain, with no terminating NUL:
+## 9. Vault identity and recognition
 
 ```text
-VAULT_FINGERPRINT = HMAC-SHA-256(K_root, ASCII("totipo/v1/vault-fingerprint"))
+VAULT_ID = SHA-256(exact canonical VAULT representation)
 ```
 
-The 32-byte fingerprint is stable for one K_root, unchanged across password
-rewraps, and differs for independently generated roots except with negligible
-collision probability. It is non-secret recognition data, not authorization,
-freshness, first-contact authentication, or rollback protection.
+The input is exactly the canonical 87-byte VAULT representation, with no pathname,
+text encoding, prefix, or suffix. The output is 32 raw bytes; its ordinary text
+form, when needed, is lowercase hexadecimal. VAULT_ID is non-secret and stable
+because VAULT is immutable. Different canonical bytes produce a different vault
+identity except with negligible SHA-256 collision probability.
 
-An expected fingerprint is optional application configuration. After successful
-unlock, mismatch means “different vault than expected,” not invalid vault. A new
-client needs no stored fingerprint. Losing that configuration does not invalidate
-a vault, prevent authorship, or prevent computation with a known credential.
+VAULT_ID is recognition data and a convenient store/application binding identity.
+It is not authorization, a password verifier beyond what VAULT already is, proof
+of first-contact authenticity, proof of storage freshness or object completeness,
+or rollback protection for the object bag. Computing it does not authenticate
+VAULT; structural validation and successful root-wrap authentication still apply.
+
+Applications MAY remember a configured store/location, expected VAULT_ID, friendly
+name, and preferences. These are application configuration, not protocol-authoritative
+state. If an expected VAULT_ID is retained, the exact current canonical VAULT MUST
+hash to it for the expected binding to match. Mismatch means a different vault,
+not a newer or older wrapper; malformed bytes remain invalid storage evidence.
+A new client needs no remembered identifier. Loss of remembered configuration does
+not invalidate the vault, prevent authorship, or prevent computation with a known
+credential.
 
 ## 10. Object key hierarchy and identity
 
@@ -770,8 +805,8 @@ their applicable scopes; classification does not weaken them.
 | Scope | Requirements covered |
 | --- | --- |
 | Core protocol | Exact encoding/framing, bootstrap and object cryptography, OBJECT_ID validation, TOKEN parsing and validation, metadata preservation, causal graph and current-state computation, complete-value equality, parent/fold behavior, TOTP where implemented, and other portable byte/semantic behavior. |
-| Store/writer | Observation and store qualification assumptions; create/update publication, crash-safe publication/replacement behavior under Sections 7, 8, and 18, exact compare-before-replace, durability-result handling, and preservation of required object bytes and metadata. No stronger atomic primitive is imposed by this scope. |
-| Application | Truthful current/stale/conflicting/tombstoned/unavailable and incomplete-state presentation; relevant-alternative disclosure during resolution; warnings and explicit confirmation; delete-versus-erasure and password-change security wording; safe presentation of untrusted text. |
+| Store/writer | Observation and store qualification assumptions; create-only publication, crash-safe initial creation and object publication under Sections 7 and 18, no-replace behavior, orphan-object creation safety, durability-result handling, and preservation of required object bytes and metadata. No stronger atomic primitive is imposed by this scope. |
+| Application | Truthful current/stale/conflicting/tombstoned/unavailable and incomplete-state presentation; relevant-alternative disclosure during resolution; warnings and explicit confirmation; delete-versus-erasure and credential-change security wording; safe presentation of untrusted text. |
 
 The per-object metadata rule in Section 12 applies wherever objects are
 represented, and Section 17 additionally governs operation-wide fold metadata.
@@ -785,16 +820,16 @@ including Sections 5, 7, 8, 12, 16, and 17.
 Conformance evidence MUST cover the claimed scopes and operations. Applicable
 core evidence includes valid and invalid bytes, metadata presence and limits,
 four-parent bounds, maximum size, fixed folds, missing parents, equal and
-conflicting cycles, complete tombstones, and fingerprint/rewrap stability.
+conflicting cycles, complete tombstones, bootstrap known answers, and VAULT_ID recognition.
 Store evidence includes diagnostic-only incomplete observation and truthful
-publication/replacement outcomes. Application evidence additionally covers the
+create-only publication outcomes. Application evidence additionally covers the
 required disclosures, warnings, confirmations, and truthful state descriptions;
 portable corpus success alone does not establish application conformance.
 
 Abstract graph fixtures may model cycles and same-ID failures without pretending
 to construct cryptographic collisions. Storage workflow fixtures model platform
 outcomes; they are not proof of a particular filesystem's crash durability.
-The platform-neutral durability contracts in Sections 7, 8, and 18 still apply.
+The platform-neutral durability contracts in Sections 7 and 18 still apply.
 
 The repository moving pre-RC requirements profile pins this specification, schema,
 manifest, and exact required cases. It is not a frozen RC profile. Every case
@@ -803,6 +838,16 @@ capability mechanism. Historical revision records do not confer compatibility
 with their old TOKEN bytes.
 
 ## 21. Revision history
+
+### v1/r19
+
+Nineteenth v1 design draft. VAULT becomes immutable/create-once; password rewrap
+and VAULT replacement are removed. Credential/KDF/root changes create independent
+vaults with fresh roots. Introduces VAULT_ID and removes redundant VAULT_FINGERPRINT.
+Strengthens initial no-replace publication and orphan-object creation safety;
+protocol state is create-only after initialization. Migration guidance is
+informative and non-protocol; conformance is adjusted accordingly. VAULT encoding,
+bootstrap cryptography, object wire format, and TOKEN semantics are unchanged.
 
 ### v1/r18
 

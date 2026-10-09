@@ -45,18 +45,7 @@ class CryptoSupportTest {
         assertThrows(IllegalArgumentException.class, () -> CryptoSupport.extract(new byte[33]));
     }
 
-    @Test
-    void fingerprintUsesDirectRootHmacAndExactDomain() throws Exception {
-        byte[] root = new byte[32];
-        for (int i = 0; i < root.length; i++) { root[i] = (byte) i; }
-        var mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(root, "HmacSHA256"));
-        byte[] expected = mac.doFinal("totipo/v1/vault-fingerprint"
-                .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-        assertArrayEquals(expected, CryptoSupport.vaultFingerprint(root));
-        assertThrows(IllegalArgumentException.class, () -> CryptoSupport.vaultFingerprint(new byte[31]));
-        assertThrows(IllegalArgumentException.class, () -> CryptoSupport.vaultFingerprint(new byte[33]));
-    }
+
 
     @Test
     void keyedIdentityOwnsBytesAndChangesWithEachSemanticByte() throws Exception {

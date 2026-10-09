@@ -198,7 +198,7 @@ class ReleaseTests(unittest.TestCase):
             Path(directory, "review").mkdir()
             notes = "## v0.1.1\n\nreviewed"
             Path(directory, "review/V0_1_1_RELEASE_NOTES.md").write_text(notes)
-            body = notes + f"\n\n### Release provenance\n\n- Java source commit: `{'a' * 40}`\n- Totipo v1/r18 spec commit: `{release.SPEC_COMMIT}`\n- Portable corpus: 90/90 executed, none deferred.\n"
+            body = notes + f"\n\n### Release provenance\n\n- Java source commit: `{'a' * 40}`\n- Totipo v1/r19 spec commit: `{release.SPEC_COMMIT}`\n- Portable corpus: 92/92 executed, none deferred.\n"
             record = {"tag_name": "v0.1.1", "name": "v0.1.1", "draft": False, "prerelease": False, "body": body}
             with patch.object(release, "identity"), patch.object(release, "git", side_effect=["tag", "unsigned annotated tag", "a" * 40 + " refs/tags/v0.1.1", "tag"]) as commands, patch.object(release, "release_record", return_value=record), patch.object(release.subprocess, "run") as mutate:
                 release.tag_release()

@@ -1,7 +1,7 @@
 package org.totipo.format;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.totipo.format.V1ObjectPublicationStore.PublicationResult.*;
+import org.totipo.spi.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -14,6 +14,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class TokenPublicationTest {
+    static final ObjectWrite PUBLISHED_NEW = new ObjectWrite.Written();
+    static final ObjectWrite ALREADY_PRESENT_EXACT = new ObjectWrite.AlreadyPresentExact();
     static byte[] root() { byte[] root = new byte[32]; Arrays.fill(root, (byte) 17); return root; }
     static TokenValue value(int status, String account) {
         return new TokenValue(status, "Issuer", account,
@@ -129,10 +131,7 @@ class TokenPublicationTest {
         assertEquals(2 + (residue ? 1 : 0), store.objects.size());
         assertFalse(store.objects.containsKey(plan.stages().get(3).objectId()));
         var prior = new java.util.HashMap<>(store.objects);
-        var observed = store.objects.entrySet().stream().map(e -> new DiscoverySource.Candidate(e.getKey(),
-                () -> java.nio.channels.Channels.newChannel(new java.io.ByteArrayInputStream(e.getValue())))).toList();
-        assertEquals(store.objects.size(), TokenStoreReader.read(() -> new DiscoverySource.Snapshot(observed,
-                DiscoverySource.SnapshotIssue.NONE), root()).validatedTokens().size());
+        assertEquals(store.objects.size(), TokenStoreReader.read(store, root()).validatedTokens().size());
         store.failCall = -1;
         assertEquals(List.of(ALREADY_PRESENT_EXACT, ALREADY_PRESENT_EXACT,
                 residue ? ALREADY_PRESENT_EXACT : PUBLISHED_NEW, PUBLISHED_NEW), TokenPublisher.publish(plan, root(), store));
@@ -155,8 +154,8 @@ class TokenPublicationTest {
     }
 
     @Test void missingAcknowledgementDoesNotSucceed() {
-        var store = new V1ObjectPublicationStore() {
-            @Override public PublicationResult publish(ObjectId id, byte[] bytes) { return null; }
+        var store = new TestStore() {
+            @Override public ObjectWrite publishObject(ObjectName id, byte[] bytes) { return null; }
             @Override public void close() {}
         };
         assertThrows(IOException.class, () -> TokenPublisher.publish(plan(0), root(), store));

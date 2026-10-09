@@ -23,7 +23,7 @@ class PublicApiTest {
     private VaultSession session;
     @BeforeAll static void vaultTemplate() {
         var store = new MemoryVault();
-        try (var session = store.create()) { bootstrap = store.bootstrap.clone(); assertNotNull(session.fingerprint()); }
+        try (var session = store.create()) { bootstrap = store.bootstrap.clone(); assertNotNull(session.vaultId()); }
     }
     @BeforeEach void open() { store = new MemoryVault(); store.bootstrap = bootstrap.clone(); session = store.open(); finished(session); }
     @AfterEach void close() { session.close(); }
@@ -173,9 +173,9 @@ class PublicApiTest {
     @Test void nioCreateOpenAndLifecycle(@TempDir Path path) {
         VaultState old;
         TokenAlternative alternative;
-        VaultFingerprint fingerprint;
+        VaultId vaultId;
         try (var nio = assertInstanceOf(CreateVaultResult.Created.class, NioTotipo.create(path, "pw".toCharArray())).session()) {
-            assertNotNull(nio.state()); fingerprint = nio.fingerprint();
+            assertNotNull(nio.state()); vaultId = nio.vaultId();
             try (var secret = NewSecret.copyOf(new byte[]{1, 2, 3}); var create = nio.state().createToken()) {
                 var result = saved(create.secret(secret).save());
                 old = awaitState(nio, s -> s.token(result.tokenId()).isPresent());
@@ -189,7 +189,7 @@ class PublicApiTest {
         assertThrows(SessionClosedException.class, () -> old.merge(old.tokens().get(0).id()));
         assertThrows(SessionClosedException.class, () -> old.generateTotp(alternative, Instant.EPOCH));
         try (var reopened = assertInstanceOf(OpenResult.Opened.class, NioTotipo.open(path, "pw".toCharArray())).session()) {
-            assertEquals(fingerprint, reopened.fingerprint()); assertEquals(1, finished(reopened).tokens().size());
+            assertEquals(vaultId, reopened.vaultId()); assertEquals(1, finished(reopened).tokens().size());
         }
         assertInstanceOf(CreateVaultResult.AlreadyExists.class, NioTotipo.create(path, "pw".toCharArray()));
     }
@@ -611,7 +611,6 @@ class PublicApiTest {
         var second = session.state().update(token.heads().get(0));
         var outstanding = assertInstanceOf(SaveResult.PublicationUncertain.class, second.save()).retry();
         session.close(); assertThrows(SessionClosedException.class, outstanding::retryPublication);
-        assertThrows(SessionClosedException.class, () -> session.changePassword("password".toCharArray(), "new".toCharArray()));
     }
     @Test void secretIngressIsDefensiveRedactedAndBuilderOwnsCopy() {
         byte[] bytes = {1, 2, 3}; var secret = NewSecret.copyOf(bytes); bytes[0] = 9;
@@ -625,8 +624,8 @@ class PublicApiTest {
         empty.readUnavailable = false; empty.bootstrap = new byte[]{1}; assertInstanceOf(OpenResult.InvalidVault.class, empty.openResult(new char[0]));
         assertInstanceOf(OpenResult.AuthenticationFailed.class, store.openResult("not-password".toCharArray()));
         assertInstanceOf(CreateVaultResult.AlreadyExists.class, store.createResult(new char[0]));
-        empty.bootstrap = null; empty.failBeforeStage = true; assertInstanceOf(CreateVaultResult.Failed.class, empty.createResult(new char[0]));
-        empty.failBeforeStage = false; empty.failReplacement = true; assertInstanceOf(CreateVaultResult.Uncertain.class, empty.createResult(new char[0]));
+        empty.bootstrap = null; empty.failCreateBeforeMutation = true; assertInstanceOf(CreateVaultResult.Failed.class, empty.createResult(new char[0]));
+        empty.failCreateBeforeMutation = false; empty.failCreate = true; assertInstanceOf(CreateVaultResult.Uncertain.class, empty.createResult(new char[0]));
     }
     private static final class Probe implements Flow.Subscriber<VaultState> {
         Flow.Subscription subscription;
@@ -827,84 +826,14 @@ class PublicApiTest {
         assertArrayEquals(store.attemptedBytes.get(offset), store.attemptedBytes.get(offset + 1));
         assertEquals(1, refresh(session).token(token.id()).orElseThrow().heads().size());
     }
-    @Test void passwordAuthenticationStaleFailureUncertaintyAndReopen() {
-        assertEquals(PasswordChangeResult.AUTHENTICATION_FAILED, session.changePassword("wrong".toCharArray(), "new".toCharArray()));
-        store.readUnavailable = true; assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        store.readUnavailable = false; store.failBeforeStage = true;
-        assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        store.failBeforeStage = false; store.staleReplacement = true;
-        assertEquals(PasswordChangeResult.STALE, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        store.bootstrap = bootstrap.clone(); store.staleReplacement = false; store.failReplacement = true;
-        assertEquals(PasswordChangeResult.UNCERTAIN, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        try (var reopened = assertInstanceOf(OpenResult.Opened.class, store.openResult("new".toCharArray())).session()) {
-            assertEquals(session.fingerprint(), reopened.fingerprint());
-        }
-    }
-    @Test void passwordChangeRejectsTrailingOrShortBaseWithBoundedRead() {
-        // The pinned r18 record is 87 bytes; 88 is only the lookahead bound.
-        assertEquals(87, bootstrap.length);
-        store.bootstrapReadLimit = bootstrap.length + 1;
-        for (int size : new int[]{bootstrap.length + 1, bootstrap.length + 4096, bootstrap.length - 1}) {
-            store.bootstrap = Arrays.copyOf(bootstrap, size); store.maxBootstrapRead = 0;
-            byte[] before = store.bootstrap.clone();
-            assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-            assertEquals(0, store.replacementAttempts); assertArrayEquals(before, store.bootstrap);
-            assertEquals(Math.min(size, bootstrap.length + 1), store.maxBootstrapRead);
-        }
-    }
-    @Test void passwordChangeRejectsCanonicalTrailingDataAddedBeforeComparison() {
-        store.bootstrapReadLimit = bootstrap.length + 1;
-        store.afterReplacementStage = () -> store.bootstrap = Arrays.copyOf(store.bootstrap, bootstrap.length + 4096);
-        assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        assertEquals(0, store.replacementAttempts); assertEquals(bootstrap.length + 4096, store.bootstrap.length);
-        assertEquals(bootstrap.length + 1, store.maxBootstrapRead);
-    }
-    @Test void stagedReplacementWithTrailingDataIsRejectedBeforeReplacement() {
-        store.bootstrapReadLimit = bootstrap.length + 1;
-        for (int trailing : new int[]{1, 4096}) {
-            store.stagedTrailingBytes = trailing;
-            assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-            assertEquals(0, store.replacementAttempts); assertArrayEquals(bootstrap, store.bootstrap);
-            assertEquals(bootstrap.length + 1, store.maxBootstrapRead);
-        }
-    }
-    @Test void stagedInitialBootstrapWithTrailingDataIsRejectedBeforeInstallation() {
-        for (int trailing : new int[]{1, 4096}) {
-            var empty = new MemoryVault(); empty.stagedTrailingBytes = trailing; empty.bootstrapReadLimit = bootstrap.length + 1;
-            assertInstanceOf(CreateVaultResult.Failed.class, empty.createResult("password".toCharArray()));
-            assertNull(empty.bootstrap); assertEquals(0, empty.initialInstallAttempts);
-            assertEquals(bootstrap.length + 1, empty.maxBootstrapRead);
-        }
-    }
-    @Test void canonicalDisappearanceBeforeReplacementIsFailedNotStale() {
-        store.afterReplacementStage = () -> store.bootstrap = null;
-        assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        assertEquals(0, store.replacementAttempts); assertNull(store.bootstrap);
-    }
-    @Test void unusableCurrentObservationFailsWhileExactChangedBytesAreStale() {
-        store.afterReplacementStage = () -> store.readUnavailable = true;
-        assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        store.readUnavailable = false;
-        store.afterReplacementStage = () -> store.bootstrap = Arrays.copyOf(bootstrap, bootstrap.length - 1);
-        assertEquals(PasswordChangeResult.FAILED, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        store.bootstrap = bootstrap.clone();
-        store.afterReplacementStage = () -> store.bootstrap[store.bootstrap.length - 1] ^= 1;
-        assertEquals(PasswordChangeResult.STALE, session.changePassword("password".toCharArray(), "new".toCharArray()));
-        assertEquals(0, store.replacementAttempts);
-    }
-    @Test void exactProtocolLengthCreationAndPasswordReplacementRemainSuccessful() {
-        var empty = new MemoryVault(); empty.bootstrapReadLimit = bootstrap.length + 1;
-        try (var created = empty.create()) {
-            assertEquals(bootstrap.length, empty.bootstrap.length); assertEquals(1, empty.initialInstallAttempts);
-            assertEquals(PasswordChangeResult.CHANGED, created.changePassword("password".toCharArray(), "new".toCharArray()));
-            assertEquals(bootstrap.length, empty.bootstrap.length); assertEquals(1, empty.replacementAttempts);
-            assertEquals(bootstrap.length, empty.maxBootstrapRead);
-            try (var reopened = assertInstanceOf(OpenResult.Opened.class, empty.openResult("new".toCharArray())).session()) {
-                assertEquals(created.fingerprint(), reopened.fingerprint());
-            }
-            assertInstanceOf(OpenResult.AuthenticationFailed.class, empty.openResult("password".toCharArray()));
-        }
-    }
+
+
+
+
+
+
+
+
     @Test void nioOpenIsReadOnlyWithNoObjectNamespace(@TempDir Path path) throws Exception {
         Files.write(path.resolve("vault"), bootstrap);
         assertFalse(Files.exists(path.resolve("objects-v1")));

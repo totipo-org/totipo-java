@@ -12,26 +12,24 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Exercise the public application through only the layout SPI, including dishonest staging
- * and unchecked failures after canonical mutation entry. */
+/** Exercise canonical revalidation and provider certainty through only the cohesive layout SPI. */
 class SpiApplicationTest {
     private static byte[] template;
     private static final char[] PASSWORD = "password".toCharArray();
     @BeforeAll static void template() {
         var memory = new MemoryVault();
-        try (var session = memory.create()) { template = memory.bootstrap.clone(); assertNotNull(session.fingerprint()); }
+        try (var session = memory.create()) { template = memory.bootstrap.clone(); assertNotNull(session.vaultId()); }
     }
     private static final class Store implements TotipoStore {
         byte[] vault = template.clone();
         final Map<ObjectName, byte[]> objects = new ConcurrentHashMap<>();
         final List<ObjectName> reads = Collections.synchronizedList(new ArrayList<>());
-        int closes, installs, replaces, preparedCloses, publications;
-        String stageMode = "", installMode = "", replaceMode = "", publicationMode = "";
-        boolean incomplete, failCleanup;
+        int closes, installs, publications;
+        String canonicalMode = "", installMode = "", publicationMode = "";
+        boolean incomplete;
         BoundedRead forcedRead;
         BoundedRead forcedObjectRead;
         EntryKind scanKind = EntryKind.REGULAR;
-        Runnable afterReadBack = () -> {};
         static BoundedRead read(byte[] bytes, int expected) {
             if (bytes == null) return new BoundedRead.Absent();
             if (bytes.length < expected) return new BoundedRead.Undersized(bytes.length);
@@ -57,47 +55,24 @@ class SpiApplicationTest {
             if (old == null) return new ObjectWrite.Written();
             return Arrays.equals(old, bytes) ? new ObjectWrite.AlreadyPresentExact() : new ObjectWrite.ExistingDifferent();
         }
-        @Override public VaultPrepare prepareVault(byte[] bytes) {
-            if (stageMode.equals("failed")) return new VaultPrepare.Failed(StoreFailure.UNAVAILABLE);
-            byte[] staged = bytes.clone();
-            if (stageMode.equals("changed")) staged[0] ^= 1;
-            return new VaultPrepare.Prepared(new PreparedVault() {
-                boolean closed;
-                @Override public BoundedRead readBack(int expected) {
-                    var result = switch (stageMode) {
-                        case "short" -> new BoundedRead.Undersized(expected - 1);
-                        case "long" -> new BoundedRead.Oversized();
-                        case "unavailable" -> new BoundedRead.Unavailable(StoreFailure.UNAVAILABLE);
-                        case "wrong-kind" -> new BoundedRead.WrongKind(EntryKind.SYMLINK);
-                        default -> read(staged, expected);
-                    };
-                    afterReadBack.run();
-                    return result;
-                }
-                @Override public VaultInstall installCanonicalIfAbsent() {
-                    installs++;
-                    if (installMode.equals("failed")) return new VaultInstall.Failed(StoreFailure.UNAVAILABLE);
-                    if (installMode.equals("already") || vault != null) return new VaultInstall.AlreadyPresent();
-                    vault = staged.clone();
-                    if (installMode.equals("throw")) throw new IllegalStateException("lost install acknowledgement");
-                    if (installMode.equals("uncertain")) return new VaultInstall.Uncertain(StoreFailure.UNAVAILABLE);
-                    return new VaultInstall.Installed();
-                }
-                @Override public VaultReplace replaceCanonical() {
-                    replaces++;
-                    if (replaceMode.equals("failed")) return new VaultReplace.Failed(StoreFailure.UNAVAILABLE);
-                    vault = staged.clone();
-                    if (replaceMode.equals("throw")) throw new IllegalStateException("lost replacement acknowledgement");
-                    if (replaceMode.equals("uncertain")) return new VaultReplace.Uncertain(StoreFailure.UNAVAILABLE);
-                    return new VaultReplace.Replaced();
-                }
-                @Override public void close() {
-                    if (!closed) {
-                        closed = true; preparedCloses++;
-                        if (failCleanup) throw new IllegalStateException("staging cleanup failed");
-                    }
-                }
-            });
+        @Override public VaultCreate createVault(byte[] bytes) {
+            installs++;
+            if (installMode.equals("failed")) return new VaultCreate.Failed(StoreFailure.UNAVAILABLE);
+            if (installMode.equals("already") || vault != null) return new VaultCreate.AlreadyPresent();
+            vault = bytes.clone();
+            if (installMode.equals("throw")) throw new IllegalStateException("lost acknowledgement");
+            if (installMode.equals("uncertain")) return new VaultCreate.Uncertain(StoreFailure.UNAVAILABLE);
+            switch (canonicalMode) {
+                case "changed" -> vault[0] ^= 1;
+                case "short" -> vault = Arrays.copyOf(vault, 86);
+                case "long" -> vault = Arrays.copyOf(vault, 88);
+                case "absent" -> vault = null;
+                case "unavailable" -> forcedRead = new BoundedRead.Unavailable(StoreFailure.UNAVAILABLE);
+                case "wrong-kind" -> forcedRead = new BoundedRead.WrongKind(EntryKind.SYMLINK);
+                case "throw" -> forcedRead = null;
+                default -> { }
+            }
+            return new VaultCreate.Created();
         }
         @Override public void close() { closes++; }
     }
@@ -114,10 +89,10 @@ class SpiApplicationTest {
         assertEquals(1, store.closes);
     }
 
-    @Test void successfulCreateTransfersOwnershipAndClosesStage() {
+    @Test void successfulCreateTransfersOwnership() {
         var store = new Store(); store.vault = null;
         var session = assertInstanceOf(CreateVaultResult.Created.class, Totipo.create(store, PASSWORD)).session();
-        assertEquals(0, store.closes); assertEquals(1, store.preparedCloses);
+        assertEquals(0, store.closes);
         assertEquals(1, store.installs);
         session.close(); session.close();
         assertEquals(1, store.closes);
@@ -153,14 +128,6 @@ class SpiApplicationTest {
         assertEquals(1, create.closes);
     }
 
-    @ParameterizedTest @ValueSource(strings = {"failed", "changed", "short", "long", "wrong-kind", "unavailable"})
-    void createValidatesWhatWasStagedBeforeAnyCanonicalMutation(String mode) {
-        var store = new Store(); store.vault = null; store.stageMode = mode;
-        assertInstanceOf(CreateVaultResult.Failed.class, Totipo.create(store, PASSWORD));
-        assertEquals(0, store.installs); assertNull(store.vault); assertEquals(1, store.closes);
-        assertEquals(mode.equals("failed") ? 0 : 1, store.preparedCloses);
-    }
-
     @ParameterizedTest @ValueSource(strings = {"failed", "already", "uncertain", "throw"})
     void createMapsDefiniteAndAmbiguousInstallOutcomes(String mode) {
         var store = new Store(); store.vault = null; store.installMode = mode;
@@ -168,39 +135,7 @@ class SpiApplicationTest {
         if (mode.equals("failed")) assertInstanceOf(CreateVaultResult.Failed.class, result);
         else if (mode.equals("already")) assertInstanceOf(CreateVaultResult.AlreadyExists.class, result);
         else assertInstanceOf(CreateVaultResult.Uncertain.class, result);
-        assertEquals(1, store.installs); assertEquals(1, store.closes); assertEquals(1, store.preparedCloses);
-    }
-
-    @ParameterizedTest @ValueSource(strings = {"failed", "uncertain", "throw", "success"})
-    void passwordChangeMapsReplacementCertainty(String mode) {
-        var store = new Store(); store.replaceMode = mode;
-        try (var session = open(store)) {
-            var result = session.changePassword(PASSWORD, "next".toCharArray());
-            assertEquals(switch (mode) {
-                case "failed" -> PasswordChangeResult.FAILED;
-                case "uncertain", "throw" -> PasswordChangeResult.UNCERTAIN;
-                default -> PasswordChangeResult.CHANGED;
-            }, result);
-            assertEquals(1, store.replaces); assertEquals(1, store.preparedCloses);
-            assertEquals(0, store.closes);
-        }
-        assertEquals(1, store.closes);
-    }
-
-    @ParameterizedTest @ValueSource(strings = {"changed", "absent", "unavailable", "stage-changed"})
-    void currentComparisonAndStageValidationRemainInCore(String mode) {
-        var store = new Store();
-        try (var session = open(store)) {
-            if (mode.equals("stage-changed")) store.stageMode = "changed";
-            else store.afterReadBack = () -> {
-                if (mode.equals("changed")) { store.vault = store.vault.clone(); store.vault[0] ^= 1; }
-                if (mode.equals("absent")) store.vault = null;
-                if (mode.equals("unavailable")) store.forcedRead = new BoundedRead.Unavailable(StoreFailure.UNAVAILABLE);
-            };
-            assertEquals(mode.equals("changed") ? PasswordChangeResult.STALE : PasswordChangeResult.FAILED,
-                    session.changePassword(PASSWORD, "next".toCharArray()));
-            assertEquals(0, store.replaces); assertEquals(1, store.preparedCloses);
-        }
+        assertEquals(1, store.installs); assertEquals(1, store.closes);
     }
 
     @ParameterizedTest @ValueSource(strings = {"uncertain", "throw"})
@@ -242,14 +177,21 @@ class SpiApplicationTest {
         assertEquals(1, store.closes);
     }
 
-    @Test void stagingCleanupFailureDoesNotDowngradeAcknowledgedCanonicalMutation() {
-        var store = new Store(); store.vault = null; store.failCleanup = true;
-        try (var session = assertInstanceOf(CreateVaultResult.Created.class, Totipo.create(store, PASSWORD)).session()) {
-            assertEquals(1, store.preparedCloses);
-            assertEquals(PasswordChangeResult.CHANGED, session.changePassword(PASSWORD, "next".toCharArray()));
-            assertEquals(2, store.preparedCloses);
-        }
-        assertEquals(1, store.closes);
+    @ParameterizedTest @ValueSource(strings = {"changed", "short", "long", "absent", "wrong-kind", "unavailable"})
+    void canonicalRevalidationFailureCannotReportCreated(String mode) {
+        var store = new Store(); store.vault = null; store.canonicalMode = mode;
+        assertInstanceOf(CreateVaultResult.Uncertain.class, Totipo.create(store, PASSWORD));
+        assertEquals(1, store.installs); assertEquals(1, store.closes);
+    }
+
+    @ParameterizedTest @EnumSource(EntryKind.class)
+    void observedCandidateVetoesCreationEvenWhenScanIsIncomplete(EntryKind kind) {
+        var store = new Store(); store.vault = null; store.incomplete = true; store.scanKind = kind;
+        store.objects.put(new ObjectName("a".repeat(64)), new byte[]{7});
+        var result = assertInstanceOf(CreateVaultResult.Failed.class, Totipo.create(store, PASSWORD));
+        assertEquals(CreateVaultResult.FailureReason.OBJECT_DATA_OBSERVED, result.reason());
+        assertEquals(0, store.installs); assertNull(store.vault);
+        assertArrayEquals(new byte[]{7}, store.objects.values().iterator().next());
     }
 
     @ParameterizedTest @EnumSource(EntryKind.class)

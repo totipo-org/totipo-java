@@ -1,6 +1,5 @@
 package org.totipo.format;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Objects;
@@ -9,27 +8,31 @@ import java.util.Objects;
 final class TokenStoreReader {
     private TokenStoreReader() {}
 
-    static TokenStoreObservation read(DiscoverySource source, byte[] root) {
-        Objects.requireNonNull(source);
-        Objects.requireNonNull(root);
+    static TokenStoreObservation read(org.totipo.spi.TotipoStore store, byte[] root) {
+        Objects.requireNonNull(store); Objects.requireNonNull(root);
         var tokens = new ArrayList<ValidatedToken>();
         var candidates = new ArrayList<TokenStoreObservation.CandidateDiagnostic>();
-        var snapshots = new ArrayList<DiscoverySource.SnapshotIssue>();
-        try (var snapshot = source.snapshot()) {
-            if (snapshot.issue() != DiscoverySource.SnapshotIssue.NONE) snapshots.add(snapshot.issue());
-            for (var candidate : snapshot.candidates()) {
-                try (var channel = candidate.opener().open()) {
-                    byte[] bytes = BoundedObjectRead.read(channel);
-                    var validation = validate(candidate.id(), bytes, root);
-                    if (validation.token() != null) tokens.add(validation.token());
-                    else candidates.add(new TokenStoreObservation.CandidateDiagnostic(candidate.id(), validation.reason()));
-                } catch (IOException unavailable) {
-                    candidates.add(new TokenStoreObservation.CandidateDiagnostic(candidate.id(),
-                            TokenStoreObservation.Reason.UNAVAILABLE));
-                }
+        var snapshots = new ArrayList<TokenStoreObservation.SnapshotIssue>();
+        var scan = store.scanObjects();
+        if (scan instanceof org.totipo.spi.ObjectScan.Incomplete incomplete)
+            snapshots.add(incomplete.reason() == org.totipo.spi.StoreFailure.UNSAFE_NAMESPACE
+                    ? TokenStoreObservation.SnapshotIssue.UNSAFE_NAMESPACE
+                    : TokenStoreObservation.SnapshotIssue.ENUMERATION_UNAVAILABLE);
+        for (var entry : scan.entries()) {
+            ObjectId id;
+            try { id = ObjectId.fromFilename(entry.name().value()); }
+            catch (IllegalArgumentException ignored) { continue; }
+            var read = store.readObject(entry.name(), EnvelopeReader.OBJECT_BYTES);
+            if (read instanceof org.totipo.spi.BoundedRead.Present present) {
+                var validation = validate(id, present.bytes(), root);
+                if (validation.token() != null) tokens.add(validation.token());
+                else candidates.add(new TokenStoreObservation.CandidateDiagnostic(id, validation.reason()));
+            } else {
+                var reason = read instanceof org.totipo.spi.BoundedRead.Undersized
+                        || read instanceof org.totipo.spi.BoundedRead.Oversized
+                        ? TokenStoreObservation.Reason.INVALID_STORAGE : TokenStoreObservation.Reason.UNAVAILABLE;
+                candidates.add(new TokenStoreObservation.CandidateDiagnostic(id, reason));
             }
-        } catch (IOException unavailable) {
-            snapshots.add(DiscoverySource.SnapshotIssue.ENUMERATION_UNAVAILABLE);
         }
         return new TokenStoreObservation(tokens, candidates, snapshots);
     }

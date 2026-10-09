@@ -1,17 +1,18 @@
 # Totipo Java 0.1.5 release checklist
 
-The worktree prepares 0.1.5, adding independent immutable object-candidate validation
-through an already-open authenticated vault session without import or store mutation.
+VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose
+and review a new release version and matching notes before using this checklist.
+Independent immutable object-candidate validation remains available.
 The implementation version comes from `VERSION`; protocol compatibility is independent. The protocol
-remains Totipo Vault Format v1/r18. Specification revisions do not mechanically
+remains Totipo Vault Format v1/r19. Specification revisions do not mechanically
 determine the Java semantic version.
 
 Release provenance:
 
 - Maven coordinates: `org.totipo:totipo-core:0.1.5` and
   `org.totipo:totipo-storage-nio:0.1.5`.
-- Protocol: v1/r18, specification commit
-  `4623a7e1718e23504903096c92332597057bd8f0`; authoritative hashes in `SPEC_PIN.md`.
+- Protocol: v1/r19, specification commit
+  `cdb4e91be1c6d3704874b2b92457ffe7be5e9084`; authoritative hashes in `SPEC_PIN.md`.
 - Conformance: protocol-foundation core operations, audited facade TOKEN projections
   and metadata handling in create/update/merge (including partial resolution and
   frozen retries), and qualified low-level NIO/core store operations as scoped in
@@ -19,7 +20,7 @@ Release provenance:
   historical-metadata qualification is resolved by the
   [focused §12 audit](review/V1_R18_CAUSAL_FACT_METADATA_REPORT.md); application-observation
   limitations in API_DESIGN.md remain.
-- Portable corpus: 90/90, none deferred; reconfirmed on the exact release commit.
+- Portable corpus: 92/92, none deferred; reconfirmed on the exact release commit.
 - Java source commit: the operator enters the full reviewed SHA at dispatch. The
   workflow appends it to the GitHub release body, leaving committed reviewed notes
   unchanged. Annotated source tag convention: `v0.1.5`, matching unsigned `v0.1.0`.
@@ -44,7 +45,7 @@ preflight (no release secrets)
 - [ ] Review and commit the complete release source; push the reviewed commit to
   `main` through the repository's usual review process. Keep `main` at that commit
   while releasing; identity checks fail if it moves.
-- [ ] Verify `VERSION`, the exact r18 pin, corpus outcomes and reviewed
+- [ ] Verify `VERSION`, the exact r19 pin, corpus outcomes and reviewed
   `review/V0_1_5_RELEASE_NOTES.md`. A future version needs its own reviewed notes
   matching `review/V<version-with-dots-replaced-by-underscores>_RELEASE_NOTES.md`.
   Identity preflight and the final job both validate the version heading; no
@@ -120,17 +121,17 @@ checksum checked and strict dependency verification/locking preserved:
 ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ./gradlew :core:test \
   --tests org.totipo.conformance.SpecSnapshotIntegrityTest \
-  --tests org.totipo.conformance.R18ProfileIntegrityTest
+  --tests org.totipo.conformance.R19ProfileIntegrityTest
 (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
 git diff --check
 git status --short
 ```
 
 - [ ] Full normal and forced offline suites have zero failures/errors/skips.
-  Current evidence is 528 tests (382 core + 146 NIO); the total is recorded,
+  Current r19 totals are in the simplification report; the total is recorded,
   not used as the sole acceptance criterion. Explicit executed-set corpus
-  accounting proves **90/90**; integrity is **3/3 snapshot + 1/1 profile** and
-  **97/97** snapshot records validate.
+  accounting proves **92/92**; integrity is **3/3 snapshot + 1/1 profile** and
+  **99/99** snapshot records validate.
 - [ ] Java 17 production classfile checks, Javadocs, strict dependency verification
   and locks, publication structure/content/scopes, and both consumer modes pass.
 - [ ] Exactly 10 unsigned artifacts (six JARs, two POMs, two `.module` files) in
@@ -199,7 +200,7 @@ create/push an **annotated unsigned** `v<version>` at the dispatch commit, match
 `v0.1.0` style. Only that job has `contents: write`; other jobs have `contents: read`.
 An existing tag at the exact commit is accepted; a different commit fails and is
 never moved or force-pushed. GitHub release creation uses the committed reviewed
-notes plus a temporary final source/spec/90-case provenance section. Existing
+notes plus a temporary final source/spec/92-case provenance section. Existing
 releases must match the expected tag, title, non-draft/non-prerelease state and
 exact body; inconsistent releases fail rather than being overwritten.
 

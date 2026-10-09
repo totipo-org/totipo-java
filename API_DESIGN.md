@@ -1,7 +1,7 @@
 # Totipo Java application API
 
 This document is normative for this implementation phase, not part of the Totipo
-wire-format specification. The pinned v1/r18 specification and unchanged corpus
+wire-format specification. The pinned v1/r19 specification and corpus
 remain authoritative for protocol facts. `org.totipo` defines library API behavior
 for applications; `org.totipo.storage.nio.NioTotipo` is the ordinary filesystem entry point. There is
 no API stability promise yet.
@@ -13,8 +13,8 @@ no API stability promise yet.
 provider, exposing core transitively. Ordinary applications use `NioTotipo` and
 the high-level API; publication does not promote experimental SPI internals to
 normal application entry points. See README for release availability and coordinates.
-Version 0.1.5 is prepared and unreleased, adding independent object-candidate
-validation below.
+VERSION remains 0.1.5 during this unreleased breaking simplification; release
+version selection is separate. Independent object-candidate validation is retained.
 
 ## Entry points and lifecycle outcomes
 
@@ -26,32 +26,36 @@ replaced. Invalid Java password input (malformed UTF-16 or more than 1024 UTF-8
 bytes) is a programmer error. Password characters remain caller-owned.
 
 `NioTotipo.create(path, password)` requires an existing directory and returns
-`CreateVaultResult`: `Created(session)`, `AlreadyExists`, `Failed`, or `Uncertain`.
-Presence observed before installation yields `AlreadyExists`. Failure after entry
-to the no-replace installation boundary is conservatively `Uncertain`, including
-a concurrent creator winning that race. Never blindly retry uncertain creation;
-reobserve/open the canonical vault.
+`CreateVaultResult`: `Created(session)`, `AlreadyExists`, `Failed(reason)`, or
+`Uncertain`. Presence, including wrong-kind canonical entries, blocks creation.
+A positively established concurrent winner is AlreadyExists. Definite no-mutation
+storage failure is Failed(STORAGE); possible mutation without complete verification
+is Uncertain. Recover uncertainty by reobserving/opening canonical VAULT.
 
-`session.changePassword(currentPassword, newPassword)` returns
-`PasswordChangeResult`: `CHANGED`, `AUTHENTICATION_FAILED`, `STALE`, `FAILED`, or
-`UNCERTAIN`. `STALE` includes a changed authenticated root or changed canonical
-BASE before replacement. An unavailable/invalid observation or definite staging
-failure is `FAILED`. Once replacement is attempted, unacknowledged replacement
-is `UNCERTAIN`; neither password is then asserted to be canonical. Recover by
-re-observation/reopen. There is no automatic retry or rollback. Rewrapping retains
-the existing root, draws fresh salt and nonce, and does not rewrite TOKENs.
-Historical wrappers and their old passwords remain usable; this does not rotate the
-root, revoke old wrappers, provide rollback protection, or recover from root
-compromise. Compare-before-replace is not CAS.
+Before drawing root/salt/nonce, creation inspects available objects-v1 observation.
+An observed exact 64-character lowercase hexadecimal direct-child name vetoes
+ordinary creation, including incomplete scans, with Failed(OBJECT_DATA_OBSERVED).
+These names are unauthenticated contextual evidence; they are preserved, never
+classified as valid objects or deleted. Exhaustive enumeration is unnecessary.
+Applications can explain possible existing Totipo object data and offer recovery,
+reconfiguration or a new location. They must not blindly retry initialization.
 
-The pinned protocol VAULT record is exactly **87 bytes**. Lifecycle reads of
-password-change BASE/CURRENT and staged creation/replacement records request at
-most `VaultBootstrap.RECORD_BYTES + 1` bytes (88 including lookahead), accepting
-only an exact-length record. Short/trailing data is an unusable observation and
-causes definite failure before installation/replacement. Null preserves absence.
-On the immediate CURRENT reread, absence or unreadability is `FAILED`; a present
-exact-length record different from BASE is `STALE`; only byte-for-byte equality
-permits replacement. No compare-to-replace race is removed by this check.
+VAULT is immutable and create-once. Core locally validates the intended **87 bytes**,
+requests create-only publication, then freshly rereads canonical vault. Success
+requires exact length and byte equality, valid magic/bootstrap version, successful
+credential authentication, and recovery of the generated intended root. Failed
+post-publication verification is Uncertain; no repair follows.
+
+`session.vaultId()` returns immutable non-secret `VaultId`, SHA-256 of the exact
+canonical VAULT. `Totipo.vaultId(byte[])` derives the same identity before unlock,
+requiring exact 87-byte structural canonicality. It runs no Argon2 or password
+authentication and claims no authenticity, freshness, origin or intended-store match.
+VaultId owns 32 bytes defensively, supports value equality/hashCode, returns lowercase
+hexadecimal from hex(), and prints VaultId[hex].
+
+Credential, bootstrap policy or root changes require a different vault. Migration
+is an application workflow outside this milestone. Ordinary TOKEN saves and exact
+object retries leave VAULT byte-identical.
 
 NIO open remains read-only even when the valid store has no `objects-v1` directory.
 Publication-store construction validates the existing root only; namespace
@@ -62,27 +66,17 @@ they do not expose the older internal mixed lifecycle result model.
 
 ## Session and state ownership
 
-For an exclusively application-controlled local replica, provider integrations
-may pass `NioTotipoStore.openPrivate(root)` (or its `StorageDurability` overload)
-to `Totipo.open/create`. This opt-in selects complete-stage ordinary moves for
-new objects and initial VAULT installation, without replacement options. The
-application must exclude independent ordinary writers and direct synchronization
-software, and serialize all writers, handle/session calls and bridge operations
-for the root.
-Core's provider gate coordinates only one session. Remote bytes must enter through
-a separately controlled reconciliation bridge. The factory does not enforce root
-exclusivity. It retains persistence acknowledgement and conservative uncertainty,
-but supplies no atomic no-replace guarantee against concurrent writers.
-Existing `NioTotipo` and `NioTotipoStore.open` callers retain shared-store hard links.
-The private store transfers ownership in exactly the same way as any TotipoStore.
-Directly synchronized/shared vault directories should continue using shared mode
-unless separately qualified. Private mode is not an automatic fallback for
-unavailable hard links.
+Provider integrations consume `TotipoStore` directly. Ordinary NIO factories use
+shared-safe hard links. A coordinated owner can obtain one persistent delegate via
+`NioStoreComposition.coordinatedDelegate(root, durability)`, wrap it, and serialize
+all store calls, sessions, writers and bridge mutations across the whole root.
+Direct use without that external serialization violates the experimental composition
+contract. Core coordinates only one session. This move-based mechanism remains in
+storage-nio for a future Android wrapper; Java tests add no Android qualification.
 
-`VaultSession` is the live capability. It owns the root, decrypted TOKEN values,
-configured-store resources, retained history references, builders and observation
-machinery. `fingerprint()` belongs to the session alone. A fingerprint recognizes
-a root; it proves neither authorization nor freshness.
+`VaultSession` owns root secrets, decrypted TOKEN values, configured-store resources,
+retained history references, builders and observation machinery. Its VaultId is
+recognition data and remains readable after close.
 
 `state()` is an immediate read of the latest emitted immutable `VaultState`.
 There is always a state, initially `ObservationProgress.Enumerating(0)`. This
@@ -129,7 +123,7 @@ Accepted-length ingress is snapshotted before validation. Envelope authenticatio
 length and zero padding, keyed identity and complete canonical TOKEN grammar use
 the same path as store observation. There is no alternate semantic family within
 objects-v1; unknown grammar is Invalid, not an opaque supported future object.
-Unknown namespaces remain outside this API. VAULT password wrappers are separate.
+Unknown namespaces remain outside this API. VAULT bootstrap identity is separate.
 Success does not establish current-head status, graph completeness, freshness,
 persistence, provider/store origin or remote synchronization; it performs no import.
 
@@ -151,7 +145,7 @@ current heads alone do not retain complete authenticated object representations.
 Comparisons across different vault roots carry no such meaning.
 
 Validation is serialized on the existing provider gate with scans, publication,
-password changes, other validations and final cleanup. It performs no provider
+other validations and final cleanup. It performs no provider
 calls, state emissions, value interning, ancestry updates, history retention or
 refresh requests. It can wait for unrelated I/O and belongs off a UI thread.
 Close rejects new entrants with `SessionClosedException`; an admitted call may
@@ -357,7 +351,7 @@ elimination, globally newest state, or observation by any peer. The NIO facade
 requires the existing file/directory force capability. On an exact-existing
 acknowledgement it additionally forces the file, object directory and root so an
 uncertain earlier install is not treated as freshly durable solely from a read.
-The low-level r18 exact-existing publication behavior remains unchanged.
+The cohesive storage SPI retains this exact-existing recovery acknowledgement.
 
 Before the first provider publication call, the operation freezes token ID,
 parents, complete value, metadata, fold stages, identities and exact encrypted
@@ -398,12 +392,12 @@ construct a definite failure; it does not cast a general save result down.
 
 ## Blocking, threading and close
 
-Open/create, all builder `save` methods, partial save, retry, password change and
+Open/create, all builder `save` methods, partial save, retry and
 session close may block for KDF, configured-store I/O or coordination. They are
 inappropriate for Swing EDT or Android main thread.
 
 Synchronization is split into a provider gate and a local secret/lifecycle lock.
-The provider gate serializes candidate validation, scans, saves, retries, password change and provider
+The provider gate serializes candidate validation, scans, saves, retries and provider
 cleanup. Provider reads/writes and KDF run without the local lock. The local lock
 protects canonical value maps, builder ingress overrides, ownership registration,
 local materialization/TOTP and the transition to closing. Post-read projection
@@ -439,7 +433,7 @@ prepublication may return Failed. An in-flight provider mutation is allowed to
 finish as Saved or PublicationUncertain; close waits before wiping the root and
 owned secrets and releasing storage. Prior uncertainty is never downgraded.
 Descriptive states, descriptors, metadata and diagnostics remain readable.
-Builders, TOTP, partial save, retries, refresh and password change require an open
+Builders, TOTP, partial save, retries, refresh require an open
 session. Repeated close is harmless. Wiping and temporary cleanup do not claim
 JVM secure erasure or additional durability.
 
@@ -449,20 +443,19 @@ are exceptions, not persistence result variants.
 
 ## Boundaries and non-goals
 
-The existing public `format` storage interfaces and the new `ApplicationVaults`
-bridge are provider/internal boundaries needed by the two-module build, not normal
-application API or a frozen third-party SPI. Application code needs only
-`org.totipo` and `NioTotipo`. Package-private codecs, graph, fold and crypto stay
-package-private. The facade does not change protocol encoding or r18 semantics.
+`TotipoStore` is the primary experimental provider boundary. The two-module
+`format.VaultLifecycle` implementation bridge consumes it directly. Application
+code uses `org.totipo` and `NioTotipo`; codecs, graph, fold and crypto remain internal.
+Bootstrap/object wire encoding, TOKEN semantics and TOTP remain byte-compatible.
 
 Deployment/sync remains separate: there is no replication, remote acknowledgement,
 rollback resistance, device enrollment, recovery-crypto change, UI, QR scanner,
 platform qualification expansion, automatic winner, or field-level CRDT here.
-Evidence remains the local case-sensitive Linux provider suite and pinned r18
+Evidence remains the local case-sensitive Linux provider suite and pinned r19
 corpus, not independent interoperability, universal crash safety or other-platform
 qualification.
 
-## r18 conformance scope and application responsibilities
+## r19 conformance scope and application responsibilities
 
 README scopes v1 core conformance to the protocol foundation operations and v1 store
 conformance to qualified NIO storage with the applicable core orchestration. No v1
@@ -487,12 +480,12 @@ not replace or inherit the metadata of its parents. §12 requires exact metadata
 while an object representation is retained, not indefinite historical persistence.
 There is no blanket certification of every facade operation or application behavior.
 
-Callers have the following information for implementing r18 application behavior:
+Callers have the following information for implementing r19 application behavior:
 
 | Requirement | API support and application responsibility |
 | --- | --- |
 | Empty-password intent | The caller supplies `char[]` and knows if it is empty. Empty UTF-8 remains format-valid for creation and reading. Interactive applications must obtain explicit confirmation before empty-password creation; the library supplies no dialog. |
-| Possible existing vault without bootstrap | Before transferring store ownership to `Totipo.create`, provider integrations can inspect `TotipoStore.readVault` and `scanObjects`, including observed direct-child names and incomplete-scan results. Exactly 64 lowercase hex names are unauthenticated context; applications should warn and confirm during available observation. Creation neither requires exhaustive enumeration nor vetoes orphan-looking entries. `NioTotipo.create` has no pre-creation orphan diagnostic/result: a convenience-only caller cannot receive this context through that method. Flag any need for a facade diagnostic for human review; no new API is added here. |
+| Possible existing vault without bootstrap | Failed(OBJECT_DATA_OBSERVED) reports the pre-entropy creation veto. Explain possible existing Totipo data and offer recovery, reconfiguration or a new location. Names are unauthenticated evidence; no exhaustive enumeration is required. |
 | Current/historical/stale | Compare captured head revision IDs with the latest observed state's heads. Old states remain readable and their complete alternatives remain usable while the session is open. An incomplete or rolled-back observation does not prove freshness or supersession; the library supplies no universal historical/current certification. |
 | Conflict and equal-valued distinct heads | `TokenState.hasConflict()` reports distinct complete values; `alternatives()` groups equal values while `heads()` retains every distinct current identity and its metadata. Applications must disclose both kinds of alternatives truthfully. |
 | Tombstone | `TokenAlternative.descriptor().status()` exposes lifecycle state. Tombstones still have complete credentials and allow explicit TOTP; applications must not promise erasure. |
@@ -500,7 +493,6 @@ Callers have the following information for implementing r18 application behavior
 | Complete-known vs unavailable | Represented alternatives contain validated complete values; missing/unreadable ancestry has no synthesized value. Absence from observation does not prove deletion or a complete unknown value. |
 | Newly learned resolution alternatives | Merge reobserves; `SaveResult.AdditionalConflict` returns the latest state and an explicit partial-resolution capability when a relevant alternative is newly learned, including a distinct equal-valued head. The application performs disclosure and the decision. |
 | Exact represented-head metadata | `TokenHead.metadata()` exposes exact optional name and optional unsigned-u64 time bits; it preserves absent/present-empty and absent/zero distinctions. Captured heads preserve these distinctions after later observations, source disappearance and session closure. |
-| Password rewrap | `PasswordChangeResult` distinguishes changed/authentication-failed/stale/failed/uncertain. Applications must describe same-root rewrap truthfully and recover uncertainty by observation/opening. It is not a full security reset. |
 
 The root-compromise guidance in §8.1 is informative and defines no migration or
 re-key protocol. Cycle-safe traversal and defensive same-ID exclusion remain

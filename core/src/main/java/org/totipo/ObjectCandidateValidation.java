@@ -19,7 +19,7 @@ public sealed interface ObjectCandidateValidation {
     /** Supplied canonical object ID and exact validated 1024-byte opaque ciphertext snapshot.
      * Construction defensively copies the representation and access returns defensive copies.
      * No plaintext TOKEN, secret, issuer/account, parent model, metadata projection, root,
-     * fingerprint, key or validation diagnostics are retained. toString redacts ciphertext.
+     * identity, key or validation diagnostics are retained. toString redacts ciphertext.
      * This publicly constructible value is descriptive; only a successful session call establishes validation.
      * Retains no session or secret and remains
      * readable after session close. Compare only results validated against the same vault root:

@@ -1,180 +1,131 @@
 # Totipo Java
 
-Portable Java libraries targeting Totipo Vault Format v1, revision **r18**.
-The exact committed specification and language-neutral corpus are pinned in
-[SPEC_PIN.md](SPEC_PIN.md).
+Portable Java libraries targeting Totipo Vault Format v1, revision **r19**.
+The exact committed specification and 92-case language-neutral corpus are pinned
+in [SPEC_PIN.md](SPEC_PIN.md).
 
-Normal Java clients should start with `NioTotipo.open(path, password)` or
-`NioTotipo.create(path, password)` in `org.totipo.storage.nio`, then use the
-`org.totipo` application API: `VaultSession`, immutable `VaultState` projections,
+Normal filesystem clients use `NioTotipo.open(path, password)` or
+`NioTotipo.create(path, password)`, then `VaultSession`, immutable `VaultState`,
 create/update/merge builders and session-backed TOTP. The directory must already
-exist. These entry points and saves may block; inspect their explicit lifecycle
-and persistence results. See [API_DESIGN.md](API_DESIGN.md) for the contracts and
-[facade implementation evidence](review/PUBLIC_API_FACADE_REPORT.md) for coverage.
-Provider integrations use the deliberate `org.totipo.spi` boundary, implemented
-by `NioTotipoStore`. This SPI is experimental, not frozen for source/binary
-compatibility. Providers understand only storage layout and storage semantics;
-protocol interpretation stays in core. Ordinary applications need no SPI types.
-See [SPI_DESIGN.md](SPI_DESIGN.md) for the boundary and ownership contract.
+exist. Opening, creation, saves and close may block; inspect their explicit results.
+See [API_DESIGN.md](API_DESIGN.md) and [SPI_DESIGN.md](SPI_DESIGN.md).
 
-This repository has completed the r18 portable core implementation milestone:
-**90/90 portable corpus cases implemented, none deferred**. The TOKEN codec,
-graph/fold, TOKEN storage/authorship/publication, and VAULT lifecycle are complete
-for this corpus. Configured-store observation validates TOKENs
-for explicit graph evaluation; authorship planning uses caller-selected parents,
-complete values, and exact metadata. Immutable publication executes ordinary or
-linear-carry fold plans with safe explicit retries.
-Consumers cover bootstrap, crypto, encoding, fold, graph, metadata, size,
-storage, TOTP, and all eight vault workflow cases.
-Implementation evidence is executable in
-[Phase2ConformanceTest](core/src/test/java/org/totipo/format/Phase2ConformanceTest.java).
-Snapshot/profile integrity tests separately verify all 90 target cases. There is no full Java API stability
-promise yet; most core implementation types remain package-private. Corpus completion
-is not the end of API design or implementation hardening, and does not establish
-desktop/Android readiness or an independent production security audit.
-Independent interoperability has not yet been demonstrated, and this milestone
-does not claim release readiness. NIO provider qualification is limited to the
-local case-sensitive Linux filesystem tested here; exact canonical naming and
-the required operation capabilities must be qualified on each target provider.
+The provider architecture is:
 
-r18 conformance claims are scoped by supported operation (§20). The protocol
-foundation in `core` is **v1 core conforming** for bootstrap reading/creation/rewrap,
-object crypto and identity, TOKEN encoding/validation and exact object metadata,
-graph/current-state computation, complete-value equality, bounded folds and TOTP.
-The audited facade TOKEN projections and metadata handling in create/update/merge,
-including partial resolution and frozen publication retries, are included in these
-core operations. Exposed and captured heads preserve exact per-object metadata.
-`ApplicationSession.CausalFact` retains causal/topological facts derived from a
-validated TOKEN but does not retain or represent that TOKEN object itself. The
-previous historical-metadata qualification is resolved by the
-[focused §12 audit](review/V1_R18_CAUSAL_FACT_METADATA_REPORT.md). This is an
-operation-scoped claim, not certification of every facade operation.
-See [API scope and application responsibilities](API_DESIGN.md#r18-conformance-scope-and-application-responsibilities).
+```text
+Totipo / VaultSession
+    -> TotipoStore
+    -> NioTotipoStore
+```
 
-The `storage-nio` provider with core's low-level observation/publication/VAULT
-orchestration is **v1 store conforming** for those supported operations: observation,
-immutable publication, no-replace creation, replacement, exact compare-before-replace
-and explicit durability results. This claim retains the provider and filesystem
-qualifications above and below; abstract tests do not prove physical power-loss
-behavior on every filesystem. The NIO SPI alone does not authenticate protocol bytes;
-core supplies that validation and the exact comparison before replacement.
+The cohesive SPI is explicitly experimental and unfrozen. Providers interpret
+storage layout, entry observations, bounded bytes, opaque create-only publication,
+durability acknowledgement and lifetime. Protocol interpretation stays in core.
 
-**v1 application conformance is not claimed.** A reusable library and its state API
-do not implement the application's confirmations, warnings, truthful presentation,
-alternative disclosure or safe rendering of untrusted text. Interactive applications
-must confirm empty-password creation and should warn/confirm when available
-pre-creation observation finds possible orphan objects. Empty passwords remain
-readable, and unauthenticated orphan-looking names do not veto creation. Tombstones
-retain secrets and history; deletion is not secure erasure. Rewrap retains the same
-root with fresh salt/nonce; it does not revoke old wrappers or recover a compromised
-root. These are application responsibilities even when the library supplies data.
+VAULT is immutable and create-once. Credential, bootstrap policy or root changes
+require a different vault. Migration is an application workflow outside this
+milestone. Creation validates intended bytes locally, publishes without overwrite,
+then freshly rereads canonical `vault`, requiring exact 87-byte equality, structural
+canonicality, credential authentication and recovery of the generated root before
+returning Created. Failed verification after possible publication is Uncertain;
+canonical data is never repaired.
+
+Before generating secrets, ordinary creation observes `objects-v1`. Any observed
+exact 64-character lowercase hexadecimal direct-child name vetoes creation with
+`Failed(OBJECT_DATA_OBSERVED)`, including incomplete scans. Names are unauthenticated
+contextual evidence of possible existing Totipo data. The library preserves them
+and requires recovery, reconfiguration or a new-location workflow. No globally
+complete enumeration is required.
+
+`session.vaultId()` returns immutable, non-secret `VaultId`: SHA-256 of the exact
+canonical VAULT representation. `Totipo.vaultId(byte[])` also derives it before
+unlock, requiring the exact length, magic and bootstrap version. It runs no KDF or
+authentication and claims neither authenticity nor freshness. The ordinary text
+representation is lowercase hexadecimal. TOKEN publication and exact retries leave
+VAULT byte-identical.
+
+The implementation executes **92/92 portable cases without skips**. Bootstrap,
+object crypto, TOKEN encoding, metadata, graph/fold, authorship, publication,
+storage, TOTP and immutable VAULT workflows are covered. Bootstrap encoding,
+Argon2id, AES-GCM root wrapping, HKDF, keyed object addressing, object encryption,
+TOKEN grammar and TOTP remain byte-compatible. See
+[the simplification report](review/V1_R19_REPIN_SIMPLIFICATION_REPORT.md).
+
+Conformance is scoped by supported operation (§20): core protocol foundation and
+audited facade TOKEN projections/metadata, plus qualified NIO/core storage
+observation, create-only publication and durability-result handling. This is not
+blanket application certification. Interactive applications supply empty-password
+confirmation, truthful presentation, conflict disclosure and safe rendering of
+untrusted text. Tombstones retain secrets/history; deletion is not secure erasure.
+There is no full API stability promise, independent interoperability demonstration,
+security audit or new desktop/Android readiness claim.
 
 The two production modules are:
 
-- `core`: portable Java 17 Totipo primitives and protocol foundation: bootstrap and
-  Argon2id, root/object crypto, private keyed object identity, authenticated fixed
-  envelopes, exact TOKEN semantics and TLV codec, causal groups and current heads,
-  deterministic fold construction, password handling, Java credential values, TOTP, entropy,
-  configured-store TOKEN observation and authorship planning/publication,
-  VAULT creation/open/password rewrap, and storage observation/publication/bootstrap SPIs.
-- `storage-nio`: portable Java 17 configured-store filesystem implementation:
-  direct-child discovery, immutable object publication, bootstrap storage, and an
-  injectable directory durability capability. It depends on `core`.
+- `totipo-core`: portable Java 17 protocol/application API, crypto, TOKEN/state,
+  authorship/folds, TOTP, immutable VAULT creation/opening and the storage SPI.
+- `totipo-storage-nio`: portable Java 17 layout-only filesystem provider and the
+  normal NIO facade, exposing core transitively. Directory durability is injectable.
 
-`core` depends on Bouncy Castle `bcprov` for lightweight Argon2id. Other crypto uses
-JDK providers. Jackson and JUnit are test-only. Both modules compile with
-`--release 17`, and build checks inspect every production class for Java 17 bytecode.
-The build JVM/toolchain remains JDK 25; the Gradle wrapper, dependency locks, and
-verification metadata remain pinned. No Linux-native module is currently required.
+Core uses Bouncy Castle **1.86** only for lightweight Argon2id. All other crypto,
+including SHA-256, uses JDK providers. Jackson and JUnit are test-only. Both modules
+compile with `--release 17`; checks inspect every production class (major 61,
+minor 0). The build uses JDK 25 and pinned Gradle 9.8.0, strict dependency verification
+and locks. No native access/FFM or Android dependency is required.
 
-Build and test with the repository wrapper in the existing Nix development shell
-(`nix develop`, or `direnv allow`), or with JDK 25 available:
+Build in the existing development shell (`nix develop` or `direnv allow`) or with
+JDK 25 available:
 
 ```sh
-./gradlew clean test build
-./gradlew :core:test
-./gradlew :storage-nio:test
+./gradlew clean test
+./gradlew build
+./gradlew dependencies
 ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks clean test
 ```
 
-The complete local integration suite assumes a case-sensitive filesystem, symlink
-and hard-link support, atomic moves over existing targets where tested, directory
-channels accepting force, POSIX permissions, and `mkfifo` for POSIX fixtures.
-These are test-environment assumptions, not all protocol requirements. Some
-provider integration fixtures report unsupported capabilities through JUnit
-assumptions; the normative 90-case conformance inventory must still execute
-90/90 without skips. Portable semantic conformance and provider integration
-evidence are separate: case-sensitive-host tests do not qualify case-insensitive
-providers. Windows, macOS, Android, and physical crash/power-loss behavior remain
-unqualified by this suite.
+The provider integration suite assumes a case-sensitive host with symlinks,
+hard links, directory channels accepting force, POSIX permissions and `mkfifo`.
+The normative corpus must execute without skips even if optional provider fixtures
+use assumptions. NIO qualification remains limited to the local case-sensitive
+Linux filesystem tested here. Windows, macOS, Android, case-insensitive providers
+and physical crash/power-loss behavior are not qualified by Java tests.
 
-Directory durability is attempted using `NioDurability` and pure Java NIO.
-`NioDurability` is a pure-Java runtime capability. Successful return means the
-provider accepted the requested directory-channel force operation; unsupported
-providers fail rather than being treated as durable. Java SE does not guarantee
-directory fsync semantics on every provider. `StorageDurability` stays injectable
-for a future supported backend if needed. No native-access JVM flags are required.
+`NioDurability` requests directory-channel force through pure Java NIO. Successful
+return means the provider accepted the required operation; Java SE does not promise
+universal directory-fsync behavior. Unsupported capability fails rather than being
+treated as durable. `StorageDurability` remains injectable.
 
-Provider scans expose all observed direct children of the exact `objects-v1`
-directory, with no-follow kind and optional logical length observations. Core
-selects canonical lowercase-hex regular candidates and reports namespace/enumeration
-issues diagnostically. Candidate bytes
-are hostile; the TOKEN reader composes bounded reads, envelope authentication, and
-exact grammar validation. Diagnostics preserve independently valid observations
-and imply no global operation gate. Valid bytes do not certify the observed set
-or its freshness. Graph evaluation explicitly consumes the validated subset.
-Canonical namespace, existing object, and `vault` lookups select exact observed
-direct-child directory-entry spellings. Alternate-case siblings are ignored;
-provider alias collisions during no-replace creation fail conservatively.
+Scans expose all observed direct children of exact `objects-v1`, with no-follow
+kind and optional length observations. Core selects canonical names and freshly
+reads candidates. Bytes are hostile; bounded reads, authentication and exact grammar
+validation are mandatory. Diagnostics preserve independently valid observations,
+without certifying completeness or freshness. Exact spelling matters: alternate-case
+siblings cannot supply canonical data and alias collisions fail conservatively.
 
-Default/shared TOKEN and initial VAULT installation use no-replace hard links.
-The SPI NIO provider
-attempts atomic replacement, falling back to a non-atomic move when atomic move is
-unsupported; the legacy low-level adapter retains its atomic-only contract. VAULT workflows
-open only lowercase `vault`, read at most 88 bytes, authenticate complete candidates
-and their separate stages, and preserve the exact root across password changes.
-Replacement re-observes canonical bytes and requires exact equality with authenticated
-BASE immediately before the backend attempt. This is compare-before-replace, not
-atomic CAS; the remaining race is an explicit v1 limitation. Ambiguous acknowledgements
-never report success or trigger automatic rollback/retry. Orphan TOKEN files do not
-block creation, and rewrap does not inspect or rewrite TOKENs.
+Ordinary `NioTotipoStore.open`, `NioTotipo.open` and `NioTotipo.create` use exclusive
+hard-link installation and retain no-replace exclusion for independent honest shared
+writers. They never automatically fall back to ordinary moves.
 
-The explicit `NioTotipoStore.openPrivate(root)` factory supports an
-application-private/exclusive local replica using complete forced stages and
-moves without replacement options for new objects and initial VAULT creation.
-Only the application may ordinarily write the root; synchronization software
-must not mutate it directly. The application must serialize all operations across
-every writer, handle/session and bridge operation using that root, and reconcile
-remote bytes through a separate controlled bridge. Core serialization covers only
-one session. This mode retains
-durability requests and explicit uncertainty; it provides no atomic no-replace
-guarantee against concurrent writers. It is inappropriate for a desktop's directly
-synchronized/shared directory; continue using shared mode there unless separately
-qualified. Existing `open` factories and `NioTotipo` entry
-points retain hard links, with no automatic fallback. Use
-`Totipo.create(NioTotipoStore.openPrivate(root), password)` or the corresponding
-`Totipo.open` call; normal store ownership rules apply.
-See [the portability investigation](review/NIO_PRIVATE_LOCAL_PORTABILITY_REPORT.md).
+The separate experimental `NioStoreComposition.coordinatedDelegate(root, durability)`
+factory retains complete-stage ordinary-move publication for an external coordinated
+owner, such as a future Android CoordinatedPrivateStore. That owner must wrap one
+persistent delegate and serialize **every** store call, session, writer, bridge
+mutation and handle across the whole root. Direct use without this policy violates
+the contract. Core coordinates only one session. Move publication forces the actual
+canonical file and its namespace, retaining conservative uncertainty, but provides
+no atomic exclusion against independent writers. The ordinary facade remains the
+appropriate entry point for directly synchronized/shared desktop stores.
 
-The vault fingerprint recognizes a root; it proves neither freshness nor authorization.
-No remembered fingerprint is required to open. A saved old wrapper and its password
-can still recover the root after rewrap; v1 does not provide rollback protection.
-Tests exercise force operations, close/reopen persistence, and injected failures,
-not universal physical power-loss guarantees.
+Session synchronization retains separate provider and local secret/lifecycle locks.
+Provider observations, validation, saves, retries and cleanup remain serialized;
+setters and TOTP do not wait on provider I/O under the local lock. Publication plans
+and retries retain frozen ciphertext and acknowledge only the configured local store,
+without claiming remote propagation. TOKEN/state/authorship/merge behavior is retained.
 
-TOKEN publication acknowledges
-the local configured store only; it implies no remote propagation. Plans retain
-neither roots nor canonical plaintext. Caller parents may be unavailable; duplicate
-parent input is rejected. Partial fold publication remains ordinary immutable
-history, and the same plan can be retried explicitly after failure.
-
-The test snapshot is under `core/src/test/resources/totipo-spec/v1-pre-rc/` and is
-excluded from production JARs. Java derives behavior from the normative
-specification and language-neutral corpus, not from the Go implementation.
-
-To intentionally refresh build reproducibility inputs, use `bootstrap-m0.sh` and
-review the resulting wrapper, Nix lock, module dependency locks, and verification
-metadata changes. Normal builds do not regenerate specification vectors.
+The vendored snapshot is test-only and excluded from production JARs. Java derives
+behavior from the exact normative spec/corpus, without importing upstream implementation
+code. Historical review reports remain unchanged. Build-cache/dependency inputs need
+no regeneration when dependencies and build configuration are unchanged.
 
 ## Maven consumption
 
@@ -203,18 +154,11 @@ Core brings Bouncy Castle 1.86 at runtime for Argon2id, without exposing BC as a
 public compile dependency. Both artifacts require Java 17; tests, test fixtures,
 and the specification snapshot are excluded from publications.
 
-`VERSION` is the single implementation version source. Protocol compatibility is
-separate: this worktree targets v1/r18, aligned from the prior v1/r17 pin without
-portable behavior changes. `VERSION` is prepared as **0.1.5**, adding
-`VaultSession.validateObject(...)` to validate externally obtained immutable object
-representations against an already-open authenticated vault without importing
-them or exposing root key material. It requires no password re-entry or KDF.
-The result is Invalid or a defensively owned exact validated ciphertext snapshot;
-it establishes neither freshness, current-head status nor persistence.
-The consumption examples above describe published 0.1.4; 0.1.5 is prepared,
-unreleased and under local review.
-See [the 0.1.5 preparation report](review/V0_1_5_RELEASE_PREPARATION_REPORT.md)
-and [draft release notes](review/V0_1_5_RELEASE_NOTES.md).
+`VERSION` is the single implementation version source and remains **0.1.5** for
+this local unreleased implementation. The current v1/r19 change intentionally
+simplifies pre-1.0 APIs and is breaking; the report recommends a separate minor
+release selection. The published 0.1.4 examples above are unchanged. Independent
+session object-candidate validation is retained, without import or root export.
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
 credential-free validation and the protected release-environment approval gate.

@@ -13,10 +13,8 @@ import java.util.function.Supplier;
 /** Session owner and adapter. No protocol-bearing object escapes through application projections. */
 final class ApplicationSession implements VaultSession {
     private final byte[] root;
-    private final VaultFingerprint fingerprint;
-    private final VaultBootstrapReplacementStorage bootstrap;
-    private final DiscoverySource discovery;
-    private final V1ObjectPublicationStore publication;
+    private final VaultId vaultId;
+    private final org.totipo.spi.TotipoStore store;
     // Lock order is provider gate -> local. Never wait for provider I/O holding local.
     private final ReentrantLock gate = new ReentrantLock();
     private final ReentrantLock local = new ReentrantLock();
@@ -43,15 +41,13 @@ final class ApplicationSession implements VaultSession {
     // Replaced each observation; captured states/merge bases may retain an older causal index.
     private Map<ObjectId, CausalFact> ancestry = Map.of();
 
-    ApplicationSession(byte[] root, VaultBootstrapReplacementStorage bootstrap, DiscoverySource discovery,
-                       V1ObjectPublicationStore publication) {
-        this.root = root.clone(); this.bootstrap = bootstrap; this.discovery = discovery; this.publication = publication;
-        fingerprint = new VaultFingerprint(HexFormat.of().formatHex(CryptoSupport.vaultFingerprint(root)));
+    ApplicationSession(byte[] root, VaultId vaultId, org.totipo.spi.TotipoStore store) {
+        this.root = root.clone(); this.vaultId = vaultId; this.store = store;
         current = new State(this, nextState++, new ObservationProgress.Enumerating(0), List.of(), List.of());
         publisher = new ApplicationStates(current);
         requestRefresh();
     }
-    @Override public VaultFingerprint fingerprint() { return fingerprint; }
+    @Override public VaultId vaultId() { return vaultId; }
     @Override public VaultState state() { return publisher.current(); }
     @Override public Flow.Publisher<VaultState> states() { return publisher; }
     void requireOpen() { if (closing) throw new SessionClosedException(); }
@@ -86,10 +82,10 @@ final class ApplicationSession implements VaultSession {
     }
     private boolean observePass() {
         TokenStoreObservation observation;
-        try { observation = TokenStoreReader.read(discovery, root); }
+        try { observation = TokenStoreReader.read(store, root); }
         catch (SecurityException | UnsupportedOperationException unavailable) {
             observation = new TokenStoreObservation(List.of(), List.of(),
-                    List.of(DiscoverySource.SnapshotIssue.ENUMERATION_UNAVAILABLE));
+                    List.of(TokenStoreObservation.SnapshotIssue.ENUMERATION_UNAVAILABLE));
         }
         var diagnostics = new ArrayList<VaultDiagnostic>();
         observation.snapshotDiagnostics().forEach(d -> diagnostics.add(new VaultDiagnostic(d.name())));
@@ -152,9 +148,6 @@ final class ApplicationSession implements VaultSession {
             }
         });
     }
-    @Override public PasswordChangeResult changePassword(char[] currentPassword, char[] newPassword) {
-        return providerAccess(() -> ApplicationVaults.change(bootstrap, root, currentPassword, newPassword));
-    }
     @Override public void close() {
         terminate(null);
     }
@@ -169,13 +162,13 @@ final class ApplicationSession implements VaultSession {
             if (closed) return;
             local.lock();
             try {
-                for (var resource : Set.copyOf(owned)) ApplicationVaults.cleanup(resource);
+                for (var resource : Set.copyOf(owned)) VaultLifecycle.cleanup(resource);
                 owned.clear();
                 var secrets = values.values().stream().map(v -> v.credential().secret()).toList();
                 valueIds.clear(); values.clear(); secrets.forEach(SecurityBytes::clear);
                 Arrays.fill(root, (byte) 0); ancestry = Map.of();
             } finally { local.unlock(); }
-            ApplicationVaults.cleanup(publication); ApplicationVaults.cleanup(bootstrap);
+            VaultLifecycle.cleanup(store);
             closed = true;
             publisher.terminate(terminationCause);
         } finally { gate.unlock(); }
@@ -534,7 +527,9 @@ final class ApplicationSession implements VaultSession {
             try {
                 for (var stage : stages) {
                     uncertain = true; // The SPI cannot prove non-publication after entry, including unchecked failures.
-                    if (publication.publish(stage.id(), stage.envelope().clone()) == null)
+                    var result = store.publishObject(new org.totipo.spi.ObjectName(stage.id().filename()), stage.envelope().clone());
+                    if (!(result instanceof org.totipo.spi.ObjectWrite.Written)
+                            && !(result instanceof org.totipo.spi.ObjectWrite.AlreadyPresentExact))
                         throw new java.io.IOException("No publication acknowledgement");
                 }
             } catch (java.io.IOException | RuntimeException failure) {

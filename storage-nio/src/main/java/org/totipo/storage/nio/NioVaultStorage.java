@@ -1,22 +1,17 @@
 package org.totipo.storage.nio;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
 
 /** Shared opaque staging engine. Protocol sizes and lifecycle policy belong to core. */
 final class NioVaultStorage {
     private final Path root;
     private final Operations operations;
-    private final Set<Stage> stages = new HashSet<>();
+    boolean mutationEntered;
     private boolean closed;
-    public static NioVaultStorage open(Path root, StorageDurability durability) throws IOException { return open(root, new Operations(durability)); }
     static NioVaultStorage open(Path root, Operations operations) throws IOException {
         return new NioVaultStorage(NioFiles.root(root), operations);
     }
@@ -39,27 +34,18 @@ final class NioVaultStorage {
         }
         void checkAbsent(Path target) throws IOException { installer.checkAbsent(target); }
         void syncInstalled(Path target) throws IOException {
-            if (installer == NioCanonicalInstaller.PRIVATE_MOVE) {
+            if (installer == NioCanonicalInstaller.COORDINATED_MOVE) {
                 NioFiles.regular(target);
                 try (var channel = FileChannel.open(target, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
                     syncStage(channel);
                 }
             }
         }
-        void atomicMove(Path temp, Path target) throws IOException {
-            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        }
-        void move(Path temp, Path target) throws IOException {
-            try { atomicMove(temp, target); }
-            catch (AtomicMoveNotSupportedException unsupported) {
-                Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-        }
         void syncDirectory(Path root) throws IOException { durability.syncDirectory(root); }
     }
-    private void usable() throws IOException { if (closed) throw new IOException("STORE_CLOSED"); }
-    Stage stage(byte[] candidate, Boolean replacement) throws IOException {
-        usable();
+    void create(byte[] candidate) throws IOException {
+        mutationEntered = false;
+        if (closed) throw new IOException("STORE_CLOSED");
         byte[] owned = candidate.clone();
         Path temp = null;
         try {
@@ -67,56 +53,17 @@ final class NioVaultStorage {
             try (var channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
                 NioFiles.write(channel, owned, operations::write); operations.syncStage(channel);
             }
-            var stage = new Stage(temp, replacement); stages.add(stage); return stage;
-        } catch (IOException | RuntimeException | Error e) {
-            if (temp != null) NioFiles.cleanup(temp);
-            throw e;
-        } finally { Arrays.fill(owned, (byte) 0); }
-    }
-    final class Stage implements AutoCloseable {
-        private final Path temp;
-        private final Boolean replacement;
-        private boolean ended, attempted;
-        boolean mutationEntered;
-        Stage(Path temp, Boolean replacement) { this.temp = temp; this.replacement = replacement; }
-        private void active() throws IOException { usable(); if (ended) throw new IOException("STAGE_CLOSED"); }
-        public InputStream openRead(int limit) throws IOException {
-            active(); return new ByteArrayInputStream(NioFiles.read(temp, limit));
-        }
-        org.totipo.spi.BoundedRead readBack(int expectedBytes) {
-            if (ended || attempted || closed) throw new IllegalStateException("STAGE_CONSUMED");
-            return NioReads.child(temp.getParent(), temp.getFileName().toString(), expectedBytes);
-        }
-        void requireActive() {
-            if (ended || attempted || closed) throw new IllegalStateException("STAGE_CONSUMED");
-        }
-        private void attempt(boolean replacing) throws IOException {
-            active();
-            if (attempted || (replacement != null && replacing != replacement)) throw new IOException("INVALID_INSTALL_ATTEMPT");
-            attempted = true;
-        }
-        public void installInitialDurably() throws IOException {
-            attempt(false);
-            operations.checkAbsent(root.resolve("vault"));
+            Path canonical = root.resolve("vault");
+            operations.checkAbsent(canonical);
             mutationEntered = true;
-            try { operations.installIfAbsent(root.resolve("vault"), temp); }
+            try { operations.installIfAbsent(canonical, temp); }
             catch (FileAlreadyExistsException exists) { mutationEntered = false; throw exists; }
-            operations.syncInstalled(root.resolve("vault"));
+            operations.syncInstalled(canonical);
             operations.syncDirectory(root);
+        } finally {
+            if (temp != null) NioFiles.cleanup(temp);
+            Arrays.fill(owned, (byte) 0);
         }
-        public void replaceCanonicalDurably() throws IOException {
-            attempt(true);
-            Path canonical = NioFiles.findExactDirectChild(root, "vault")
-                    .orElseThrow(() -> new NoSuchFileException("vault"));
-            NioFiles.regular(canonical);
-            mutationEntered = true;
-            operations.move(temp, canonical); operations.syncDirectory(root);
-        }
-        @Override public void close() { ended = true; stages.remove(this); NioFiles.cleanup(temp); }
     }
-    public void close() {
-        if (closed) return;
-        for (var stage : Set.copyOf(stages)) stage.close();
-        closed = true;
-    }
+    void close() { closed = true; }
 }

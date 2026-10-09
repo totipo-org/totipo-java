@@ -230,11 +230,19 @@
           "minLength": 174,
           "maxLength": 174
         },
-        "fingerprint_hex": {
+        "vault_id_hex": {
           "type": "string",
           "pattern": "^(?:[0-9a-f]{2})*$",
           "minLength": 64,
           "maxLength": 64
+        },
+        "changed_record_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{174}$"
+        },
+        "changed_vault_id_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       },
       "required": [
@@ -244,7 +252,7 @@
         "wrap_key_hex",
         "header_hex",
         "record_hex",
-        "fingerprint_hex"
+        "vault_id_hex"
       ]
     },
     "totp": {
@@ -876,8 +884,7 @@
         "action": {
           "enum": [
             "publish",
-            "create",
-            "replace"
+            "create"
           ]
         },
         "kind": {
@@ -888,10 +895,6 @@
           "pattern": "^(?:[0-9a-f]{2})*$"
         },
         "intended_hex": {
-          "type": "string",
-          "pattern": "^(?:[0-9a-f]{2})*$"
-        },
-        "base_hex": {
           "type": "string",
           "pattern": "^(?:[0-9a-f]{2})*$"
         },
@@ -913,12 +916,14 @@
         "result": {
           "enum": [
             "FAILED",
-            "STALE",
-            "REPLACED",
             "CREATED",
             "ALREADY_PRESENT_EXACT",
             "PUBLISHED_NEW"
           ]
+        },
+        "vault_hex": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{2})*$"
         }
       },
       "required": [
@@ -926,7 +931,6 @@
         "kind",
         "existing_hex",
         "intended_hex",
-        "base_hex",
         "readable",
         "complete",
         "durable",
@@ -1408,11 +1412,19 @@
                 "minLength": 174,
                 "maxLength": 174
               },
-              "fingerprint_hex": {
+              "vault_id_hex": {
                 "type": "string",
                 "pattern": "^(?:[0-9a-f]{2})*$",
                 "minLength": 64,
                 "maxLength": 64
+              },
+              "changed_record_hex": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{174}$"
+              },
+              "changed_vault_id_hex": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
               }
             },
             "required": [
@@ -1422,7 +1434,7 @@
               "wrap_key_hex",
               "header_hex",
               "record_hex",
-              "fingerprint_hex"
+              "vault_id_hex"
             ]
           }
         },
@@ -2297,8 +2309,7 @@
               "action": {
                 "enum": [
                   "publish",
-                  "create",
-                  "replace"
+                  "create"
                 ]
               },
               "kind": {
@@ -2309,10 +2320,6 @@
                 "pattern": "^(?:[0-9a-f]{2})*$"
               },
               "intended_hex": {
-                "type": "string",
-                "pattern": "^(?:[0-9a-f]{2})*$"
-              },
-              "base_hex": {
                 "type": "string",
                 "pattern": "^(?:[0-9a-f]{2})*$"
               },
@@ -2334,12 +2341,14 @@
               "result": {
                 "enum": [
                   "FAILED",
-                  "STALE",
-                  "REPLACED",
                   "CREATED",
                   "ALREADY_PRESENT_EXACT",
                   "PUBLISHED_NEW"
                 ]
+              },
+              "vault_hex": {
+                "type": "string",
+                "pattern": "^(?:[0-9a-f]{2})*$"
               }
             },
             "required": [
@@ -2347,7 +2356,6 @@
               "kind",
               "existing_hex",
               "intended_hex",
-              "base_hex",
               "readable",
               "complete",
               "durable",

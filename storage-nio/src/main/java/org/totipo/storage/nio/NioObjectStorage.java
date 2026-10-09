@@ -17,7 +17,6 @@ final class NioObjectStorage {
     static final class Different extends IOException {
         private static final long serialVersionUID = 1L;
     }
-    public static NioObjectStorage open(Path root, StorageDurability durability) throws IOException { return open(root, new Operations(durability)); }
     static NioObjectStorage open(Path root, Operations operations) throws IOException {
         return new NioObjectStorage(NioFiles.root(root), operations);
     }
@@ -46,7 +45,7 @@ final class NioObjectStorage {
         void checkAbsent(Path target) throws IOException { installer.checkAbsent(target); }
         void finishStage(FileChannel stage) throws IOException {
             // A private move need not rename an open file; the shared link path retains its channel.
-            if (installer == NioCanonicalInstaller.PRIVATE_MOVE) stage.close();
+            if (installer == NioCanonicalInstaller.COORDINATED_MOVE) stage.close();
         }
         void forceInstalled(FileChannel stage, Path target) throws IOException {
             if (installer == NioCanonicalInstaller.HARD_LINK) force(stage, "post-link-sync");
@@ -59,7 +58,7 @@ final class NioObjectStorage {
             }
         }
     }
-    boolean publish(String name, byte[] exactObjectBytes, boolean acknowledgeExisting) throws IOException {
+    boolean publish(String name, byte[] exactObjectBytes) throws IOException {
         mutationEntered = false;
         if (closed) throw new IOException("STORE_CLOSED");
         Objects.requireNonNull(name); Objects.requireNonNull(exactObjectBytes);
@@ -81,7 +80,7 @@ final class NioObjectStorage {
         var existing = NioFiles.findExactDirectChild(directory, name);
         if (existing.isPresent()) {
             if (!Arrays.equals(owned, operations.readExisting(existing.get(), "existing-read", owned.length + 1))) throw new Different();
-            if (acknowledgeExisting) acknowledge(directory, name, owned);
+            acknowledge(directory, name, owned);
             return false;
         }
         // Every new publication establishes namespace durability, even after another provider closes.
@@ -103,11 +102,11 @@ final class NioObjectStorage {
                 Path exact = NioFiles.findExactDirectChild(directory, name)
                         .orElseThrow(() -> new NioNamespace.Collision(target.toString()));
                 if (!Arrays.equals(owned, operations.readExisting(exact, "existing-read", owned.length + 1))) throw new Different();
-                if (acknowledgeExisting) acknowledge(directory, name, owned);
+                acknowledge(directory, name, owned);
                 return false;
             }
             operations.at("after-link");
-            if (acknowledgeExisting && NioFiles.findExactDirectChild(directory, name).isEmpty())
+            if (NioFiles.findExactDirectChild(directory, name).isEmpty())
                 throw new IOException("EXACT_TARGET_UNAVAILABLE");
             operations.forceInstalled(channel, target);
             operations.sync(directory, "directory-sync");

@@ -1,351 +1,179 @@
 # Experimental storage-provider boundary
 
-This document describes the implemented Java storage-provider boundary. It is
-not part of the Totipo wire-format specification. The SPI is experimental / not
-frozen yet: there is no long-term third-party source or binary compatibility
-promise. The normal application entry point remains `org.totipo` together with
-`org.totipo.storage.nio.NioTotipo`; applications need not construct SPI values.
-
-> The storage provider understands the Totipo storage layout, not the Totipo protocol.
+The SPI is experimental and not frozen for source/binary compatibility.
+The provider understands storage layout and opaque bytes; core interprets v1/r19.
+Ordinary applications use `org.totipo` with `NioTotipo`.
 
 ```text
-application
-    -> org.totipo application API
-    -> core protocol/application implementation
-    -> org.totipo.spi.TotipoStore
-    -> NIO provider
+Totipo / VaultSession
+    -> TotipoStore
+    -> NioTotipoStore
 
-<root>/
-    vault
-    objects-v1/
+<root>/vault
+<root>/objects-v1/<direct-child-name>
 ```
 
-## Scope and types
+## Cohesive provider contract
 
-The provider knows the configured root, exact canonical lowercase child `vault`,
-the exact `objects-v1` namespace, exact direct-child names, storage kinds,
-observed logical content lengths, bounded reads, opaque immutable publication,
-noncanonical staging, canonical installation/replacement, and durability
-acknowledgement. It may create provider-owned temporary representations.
-
-It does not know TokenId, RevisionId, VaultFingerprint meaning, K_root,
-password authentication, ObjectId or canonical object-name grammar, envelopes,
-TOKEN syntax, parents, heads, graph/fold, merge/conflict semantics, TOTP,
-freshness/rollback policy, authorization, or sync.
-
-All provider-facing types live in `org.totipo.spi` and import no domain or crypto
-types:
+`TotipoStore` offers `readVault(expectedBytes)`, `scanObjects()`,
+`readObject(name, expectedBytes)`, `publishObject(name, bytes)`,
+`createVault(bytes)`, and `close()`.
+It knows exact root/namespace names, direct-child names, entry kinds, bounded
+content, create-only opaque publication, durability acknowledgement and lifetime.
+It has no TokenId, RevisionId, K_root, authentication, keyed object addressing,
+TOKEN grammar, parent/merge/TOTP or synchronization responsibility.
+There are no protocol-aware provider overloads or public staging handles.
 
 | Type | Role |
 | --- | --- |
-| `TotipoStore` | Cohesive synchronous store and lifetime owner |
-| `ObjectName` | Exact direct-child name value; no protocol grammar |
-| `ObjectEntry` | Name, observed kind, optional observed logical byte length |
-| `EntryKind` | REGULAR, DIRECTORY, SYMLINK, OTHER, UNKNOWN |
-| `ObjectScan` | Complete or Incomplete enumeration with retained observations |
-| `BoundedRead` | Exact-sized read and distinct failure/size outcomes |
-| `ObjectWrite` | Immutable create-or-confirm-exact publication outcome |
-| `VaultPrepare` | Prepared handle or definite preparation failure |
-| `PreparedVault` | One actual staging representation and one mutation attempt |
-| `VaultInstall` | Installed, AlreadyPresent, Failed, Uncertain |
-| `VaultReplace` | Replaced, Failed, Uncertain; no STALE |
-| `StoreFailure` | UNAVAILABLE, UNSAFE_NAMESPACE, UNSUPPORTED |
+| TotipoStore | Cohesive synchronous storage and lifetime boundary |
+| ObjectName | Exact name value, without protocol grammar |
+| ObjectEntry | Name, observed kind and optional logical content length |
+| EntryKind | REGULAR, DIRECTORY, SYMLINK, OTHER, UNKNOWN |
+| ObjectScan | Complete or Incomplete enumeration retaining observations |
+| BoundedRead | Present, Undersized, Oversized, Absent, WrongKind, Unavailable |
+| ObjectWrite | Written, AlreadyPresentExact, ExistingDifferent, Failed, Uncertain |
+| VaultCreate | Created, AlreadyPresent, Failed, Uncertain |
+| StoreFailure | UNAVAILABLE, UNSAFE_NAMESPACE, UNSUPPORTED |
 
-The interface offers only `readVault(expectedBytes)`, `scanObjects()`,
-`readObject(name, expectedBytes)`, `publishObject(name, bytes)`,
-`prepareVault(bytes)`, and `close()`. It has no protocol operations.
+## Exact names and observations
 
-## Exact names and enumeration
-
-`ObjectName.value()` preserves the exact supplied or observed Java string. It
-does not fold case, normalize Unicode, resolve aliases, or establish an ObjectId.
+ObjectName preserves exact Java strings without normalization or case folding.
 Providers reject names that cannot safely identify one direct child. NIO rejects
-empty names, dot/dot-dot, absolute paths and multi-component paths; this is path
-safety, not Totipo filename grammar.
+empty/dot/dot-dot, absolute and multi-component paths. That is storage path safety.
 
-A scan makes one complete direct-child enumeration attempt of the exact
-`objects-v1` directory. It exposes canonical-looking names, junk, uppercase
-names, temporary names, directories, links and other kinds. It never recurses.
-Names come from actual directory entries, not reconstructed lookup paths.
-Case-distinct and normalization-distinct names remain distinct. Results contain
-no duplicate exact names and defensively copy the entry list.
+A scan observes all direct children of exact `objects-v1`, including junk,
+uppercase names, temporary names, directories, links and unknown kinds. It never
+recurses. Results defensively copy and sort entries by exact String value;
+adjacent exact duplicates are rejected without hashing hostile names. NIO retains
+an anomalous enumeration duplicate once and reports Incomplete. Failed kind/length
+observation retains the name with UNKNOWN/empty length and makes the scan Incomplete.
+Regular-file length is logical content bytes, never allocated blocks.
 
-Both provider scan collection and SPI result validation sort by exact Java
-String value and check adjacent names. They do not use attacker-controlled
-hash-table lookup for duplicate detection. An anomalous duplicate in a NIO
-enumeration is retained once and makes the scan Incomplete; duplicate exact
-names supplied to a public ObjectScan constructor are rejected. Case and
-Unicode normalization differences remain distinct.
+Complete means enumeration reached its end, without claiming an atomic snapshot,
+remote completeness, freshness or simultaneous existence. Incomplete preserves
+positive observations. Positive absence of `objects-v1` is Complete/empty;
+unsafe/unavailable namespace is Incomplete. Neither reads nor scans create it.
+An alternate-case namespace cannot supply canonical data. A lookup alias without
+an exact directory-entry spelling is unsafe; a distinct uppercase sibling is unrelated.
 
-Kind and optional length are enumeration-time observations only. Length is
-logical content bytes, never allocated blocks. NIO reports length for regular
-files and leaves it empty for other kinds. Failed metadata observation preserves
-the name with UNKNOWN kind, empty length, and marks the scan Incomplete. No
-inode, owner, timestamps, permissions or other filesystem metadata cross the SPI.
-
-> Entry kind and content length are observations from the scan, not authoritative filters for later object reads.
-
-Core recognizes protocol-relevant exact names first and freshly calls readObject
-for every canonical-looking v1 name, including DIRECTORY, SYMLINK, OTHER and
-UNKNOWN scan entries. A fresh WrongKind contributes unavailable-object evidence
-under the existing observation rules; a fresh Present may be validated normally.
-Irrelevant junk names are not probed.
-
-Complete means the provider safely reached the end of this enumeration attempt.
-It establishes neither an atomic namespace snapshot nor remote completeness,
-freshness, rollback resistance, or simultaneous existence of the returned
-entries. Incomplete retains already-observed entries; core may project their
-valid contents but cannot treat absence as proof that no other relevant object
-exists. Core translates incompleteness into its existing discovery diagnostics
-and merge-freshness behavior.
-
-Positively absent `objects-v1` maps to Complete with an empty list, preserving
-r18 behavior. Scans and reads never create it. An unsafe/unavailable namespace
-maps to Incomplete. An alias of the canonical namespace is never enumerated as
-canonical; NIO detects a lookup collision without an exact directory-entry
-spelling as unsafe. A distinct uppercase sibling on a case-sensitive filesystem
-is unrelated.
+Core interprets exact lowercase-hex object names and freshly reads every candidate,
+regardless of stale scan kind/length. Fresh WrongKind contributes unavailable-object
+evidence. Independent valid observations survive diagnostic failures; merge freshness
+continues to use known observation limitations. Creation uses observed plausible names
+as unauthenticated contextual evidence and vetoes before entropy, including incomplete
+observations. No enumeration-completeness proof or authenticated-object claim follows.
 
 ## Fresh bounded reads
 
-`readObject` accepts only ObjectName, never ObjectEntry. It freshly locates the
-exact actual direct child and reobserves kind and bytes. Prior scan metadata is
-not a read precondition: a 1024-byte regular file can later be a 17-byte file, a
-symlink, or absent. `readVault` applies the same rules only to the exact lowercase
-root child `vault`; `VAULT` never becomes canonical input.
+readObject takes ObjectName, never ObjectEntry. readVault selects only exact `vault`.
+Both freshly observe no-follow kind and bounded bytes. NIO consumes at most
+expectedBytes + 1 content bytes, without relying on size metadata. Bounds are
+nonnegative ints, with overflow-safe separate lookahead at Integer.MAX_VALUE.
 
-| Result | Meaning |
-| --- | --- |
-| Present(bytes) | Exact target is regular; complete safely read content has exactly expectedBytes |
-| Undersized(n) | EOF observed after exactly n bytes, n less than expectedBytes |
-| Oversized | At least one extra content byte observed; no truncated prefix returned |
-| Absent | Exact-name absence positively established |
-| WrongKind(kind) | Exact target observed as a nonregular entry |
-| Unavailable(reason) | Required state/read cannot safely be established |
+Present requires an exact regular target and exact length; it defensively owns
+bytes and returns copies. Undersized requires observed EOF, Oversized an extra
+byte and returns no truncated prefix. Absent requires positive exact-name absence.
+WrongKind and Unavailable remain distinct. Disappearance after exact selection may
+be Unavailable. Exact spelling is selected from actual directory entries;
+NOFOLLOW_LINKS prevents final symlink following. The trusted local OS, filesystem,
+mount/process namespace and same-privilege-process model is unchanged. There is no
+new descriptor-pinned snapshot or adversarial namespace transaction guarantee.
 
-NIO consumes at most expectedBytes + 1 content bytes, using bounded reads rather
-than size metadata to decide EOF/extra-byte outcomes. Bounds are nonnegative
-ints; negative bounds are programmer errors. Reading the possible extra byte
-separately avoids integer overflow at Integer.MAX_VALUE.
-Present defensively copies input/output arrays. A disappearance after selecting
-an exact child can be Unavailable rather than a claim of stable absence.
+## Create-only VAULT
 
-Exact selection uses string equality against actual enumerated names. No case
-or normalization alias can supply Present. No recursive resolution or final
-symlink following is permitted. NIO checks kind without following links and
-opens content with NOFOLLOW_LINKS. As with the previous provider, local OS,
-mount/process namespace and same-privilege processes are trusted; these checks
-do not invent descriptor-pinned snapshots or adversarial-namespace CAS.
+createVault publishes complete opaque bytes only when exact canonical `vault` is
+absent. Any exact existing entry, including wrong kind, blocks publication unchanged.
+An alias collision without exact spelling is unsafe, rather than an existing canonical
+acknowledgement. Existing VAULT is never replaced, including exact-identical bytes.
+
+Created positively acknowledges new publication and required storage durability.
+AlreadyPresent positively establishes existing canonical presence and no mutation.
+Failed establishes no canonical mutation by this call. Uncertain permits possible
+mutation without acknowledgement. Temporary residue is nonauthoritative; cleanup
+never deletes or repairs canonical data.
+
+Core constructs and locally validates intended 87-byte VAULT, then invokes createVault.
+After Created it freshly rereads exact canonical bytes, requires equality, valid
+structural bootstrap, credential authentication, and equality with the generated root.
+Only then can the application receive Created(session). A failed post-publication
+check is Uncertain. Staging is an internal provider mechanism: exposing a handle
+would add no security property to this sequence under the existing trust model.
 
 ## Immutable object publication
 
-`publishObject` accepts an exact direct-child name and opaque caller-owned bytes.
-It neither mutates the array nor retains it after return without copying. It
-does not derive an identity, validate a name against bytes, authenticate an
-envelope or inspect TOKEN/graph semantics.
+Written acknowledges a newly installed exact child and required durability.
+AlreadyPresentExact acknowledges exact bytes plus required durability; equality
+alone does not establish recovery after an uncertain write. ExistingDifferent
+leaves different bytes untouched. Failed proves this call did not mutate the exact
+target; Uncertain permits possible mutation. All input arrays remain caller-owned.
 
-Publication is create-or-confirm-exact and never overwrites existing different
-bytes:
+Before every new object-target mutation NIO ensures a safe exact `objects-v1`
+namespace and acknowledges root-directory persistence. This stateless barrier
+applies after provider close/reopen and to pre-existing namespaces. It then writes
+and forces a complete stage, installs without overwrite, forces installed content,
+and persists the containing directory. Exact-existing retries force the file,
+objects directory and root, then confirm exact bytes again. Failed barriers cannot
+acknowledge success. Namespace creation alone can coexist with Failed for the target.
 
-* Written: newly installed exact child with positive configured durability
-  acknowledgement.
-* AlreadyPresentExact: existing exact child has the supplied bytes and the
-  required durability acknowledgement has been established. Equality alone is
-  insufficient; an exact retry can recover known success after uncertainty.
-* ExistingDifferent: exact child contains different bytes and was not replaced.
-  Core owns any integrity interpretation.
-* Failed: this invocation provably did not change the exact target.
-* Uncertain: mutation may have occurred without the required acknowledgement.
+VAULT and object publication share NioFiles staging/write/cleanup helpers,
+NioCanonicalInstaller and StorageDurability. Their sequencing remains explicit:
+VAULT has one fixed root name and no exact-existing success; objects need namespace
+creation, exact-existing recovery and additional root barriers. A generic publication
+framework would obscure these differences.
 
-For every new object publication, NIO ensures the exact safe objects-v1 namespace
-exists and positively acknowledges the root-directory durability barrier before
-entering object-target mutation. This stateless rule applies to pre-existing
-namespaces as well as newly created ones; it never relies on process-local
-knowledge of whether an earlier provider synchronized namespace creation.
-Root-barrier failure is Failed with the target untouched by this invocation,
-including after closing and reopening the provider.
+## Shared NIO and coordinated provider composition
 
-NIO then writes and forces noncanonical staging, installs with an exclusive
-hard link, and forces the installed representation and its directory.
-The object mutation boundary is entry to the exclusive-link operation, after
-the root barrier and staging force. Unacknowledged errors after that boundary
-are Uncertain unless no mutation is positively established (such as a definite
-exclusive-create collision). Exact-existing SPI retries retain their stronger
-recovery barrier and force
-the file and both objects directory and root, then confirm bytes again. A failed
-retry barrier cannot acknowledge success. Case-alias collisions are never exact
-existing success. Creating the namespace or leaving temporary artifacts without
-publishing the exact object is compatible with Failed for that target.
+Ordinary `NioTotipoStore.open`, `NioTotipo.open` and `NioTotipo.create` retain exclusive
+hard-link installation for independent honest shared-store writers. No link failure
+selects a weaker fallback. Concurrent initial creators retain strong no-replace
+exclusion; only one can install a canonical VAULT.
 
-### Explicit private/exclusive local NIO mode
+The separate experimental integration boundary is:
 
-`NioTotipoStore.openPrivate(root)` and its `StorageDurability` overload explicitly
-select complete-stage ordinary moves for new immutable objects and initial VAULT
-installation. All existing `open` factories, convenience entry points and legacy
-adapters retain hard links. A link failure never selects private mode automatically.
+```java
+TotipoStore delegate = NioStoreComposition.coordinatedDelegate(root, durability);
+```
 
-The root must be controlled exclusively by the application, with no independent
-ordinary writer and no synchronization software directly changing its directory.
-Remote/provider bytes are reconciled through a separate application-controlled
-bridge. All writers, handle/session calls and bridge operations for the root must
-be serialized by the application; the existing core gate serializes only one
-session. Opening does not
-verify or enforce these assumptions. Same-privilege malicious races remain outside
-baseline r18; accidental concurrent application writers violate the private-mode
-configuration as well. Directly synchronized/shared vault directories should
-continue using shared mode unless separately qualified.
+An outer owner such as Android CoordinatedPrivateStore must obtain one persistent
+delegate, wrap it, and serialize every store call, session, writer, bridge mutation
+and handle across the entire root for its lifetime. Direct use without that
+whole-root serialization violates the factory contract. Opening cannot enforce
+this policy; core's provider gate coordinates only one session. Remote bytes enter
+through the owner's controlled bridge. Ordinary desktop shared directories use
+the shared facade.
 
-Private publication completes and forces a noncanonical stage, closes its channel,
-freshly checks exact target absence, and calls `Files.move` without any options.
-It never requests `REPLACE_EXISTING` or `ATOMIC_MOVE` for initial installation.
-The latter has provider-specific existing-target replacement behavior. Ordinary
-move rejects an existing target but is not atomic no-replace exclusion against a
-writer racing within the provider. The application-wide exclusion requirement
-removes that ordinary race. Errors, interruption, stale observations and unexpected
-targets still receive conservative results; an exception after move entry is
-Uncertain unless a definite no-effect collision is established. Pre-entry errors
-are Failed. Exact collision winners are compared/acknowledged normally; different
-objects and existing/wrong-kind VAULT entries survive unchanged.
+This delegate preserves complete-stage ordinary `Files.move` without options,
+closes the stage before moving, freshly checks absence, and forces the actual
+canonical file afterward because providers may implement moves by copying.
+It then persists the containing directory. Move errors after entry are uncertain
+unless no effect is positively established. Ordinary moves provide no atomic
+no-replace exclusion against independent writers; the outer owner supplies that
+exclusion. The mechanism remains in storage-nio, with no Android dependency or
+raw filesystem logic in core. Java tests do not extend Android physical qualification.
 
-After private installation NIO forces the actual canonical file and then its
-directory. This additional canonical force is needed because a provider may
-implement ordinary move by copying; forcing the old stage alone is insufficient.
-The root barrier before new object mutation, stronger exact-existing SPI retry
-barriers, staging read-back/validation, same-stage installation, one-attempt
-ownership, cleanup and result types remain unchanged. VAULT replacement uses the
-same existing atomic-replacement attempt and ordinary-replacement fallback in both
-modes. Ordinary moves may expose intermediate effects on weaker providers; r18
-§18 allows that despite complete staging, but prohibits deliberate progressive
-canonical materialization. No such materialization is implemented.
+## Certainty, ownership and synchronization
 
-r18 permits read-only exact-existing success without a fresh persistence barrier.
-The SPI's stronger acknowledgement requirement is a separate pre-existing Java
-contract issue, retained unchanged in both modes; private installation does not
-require changing it.
+A mutation operation exception alone cannot prove no effect. Link/move entry is
+the uncertainty boundary; definite exclusive-create collisions preserve positive
+no-mutation knowledge. Ordinary failures use coarse StoreFailure values, not
+exception messages. Known non-directory/link components, unsafe publication targets
+and alias collisions are UNSAFE_NAMESPACE. Unsupported capability is UNSUPPORTED;
+ordinary inability to observe/access is UNAVAILABLE.
 
-## Explicit vault staging
+Positive durability means the configured provider accepted required force work;
+it implies no remote propagation, universal crash survival or peer observation.
+StorageDurability remains injectable. Session publication uncertainty is monotonic
+across the entire frozen operation and its retries until every stage is acknowledged.
 
-`prepareVault` creates a noncanonical representation and never installs or
-replaces `vault`. Prepared owns that representation; Failed means preparation
-did not change canonical vault. Best-effort cleanup may leave abandoned
-temporary artifacts; those have no protocol authority.
+Passing a nonnull store to Totipo.open/create transfers ownership on every outcome.
+Failure/invalid password closes it; success transfers it to VaultSession. The caller
+must no longer use or close it. Close is idempotent, never removes canonical data,
+and performs best-effort resource cleanup. Provider operations on a handle are
+serialized by core. The provider gate coordinates scans, validation, saves, retries,
+cleanup and close; the local secret/lifecycle lock remains separate.
 
-Core constructs and validates a candidate, prepares it, reads back the actual
-stage, validates those exact staged bytes, and only then requests mutation.
-`readBack(expectedBytes)` freshly observes the stage using BoundedRead.
-Install/replace use that same stage; they never rebuild or re-upload a candidate
-from the original caller array after validation. The established trusted-storage
-model permits external races and provides no new CAS guarantee.
-
-`installCanonicalIfAbsent()` returns Installed only after acknowledgement.
-AlreadyPresent means exact lowercase vault existed and was not replaced.
-An uppercase alias collision is a failure, never AlreadyPresent. Installation
-never overwrites an existing canonical target.
-
-`replaceCanonical()` attempts to make the exact staged representation canonical.
-It returns Replaced, Failed or Uncertain, with no provider-level stale result.
-Core authenticates BASE, builds the candidate preserving root, stages and
-validates it, then freshly reads CURRENT. Absent/unavailable/unusable CURRENT
-fails; a usable exact-byte difference is STALE; equality permits the replacement
-attempt. No BASE or password is passed to the provider.
-
-Replacement does not imply atomic move, a transaction, CAS, or compare-and-swap.
-The SPI permits non-atomic move/copy/delete implementations. NIO attempts an
-atomic move and uses a regular replacement move if atomic move is unsupported;
-failures after mutation entry are conservatively uncertain. The retained legacy
-low-level adapter preserves its older atomic-only capability contract.
-
-A handle allows exactly one canonical mutation attempt, whether install or
-replace, including Failed/AlreadyPresent outcomes. Repeated mutation or read-back
-after consumption is a lifecycle error. Close is idempotent, abandons staging,
-and performs best-effort cleanup. It never deletes/reverts canonical vault.
-Cleanup failure cannot turn an acknowledged write into canonical uncertainty.
-Store close also abandons remaining stages.
-
-## Persistence certainty and exceptions
-
-Failed requires evidence that this invocation did not change its canonical
-target. An exception alone is not that evidence. Once a link/move/mutation may
-have occurred, a lost acknowledgement, force failure, or provider error is
-Uncertain unless absence of canonical effect is proved. NIO marks mutation entry
-before the mutating operation; definite exclusive-link collisions and
-pre-mutation failures remain distinguishable.
-
-Successful results mean the configured provider positively acknowledged its
-required durability work. They imply no remote replication/synchronization,
-universal physical crash survival, rollback protection or peer observation.
-`Saved` retains its application meaning.
-
-Ordinary storage failures use result variants and coarse StoreFailure values;
-programming/lifecycle errors may throw. Core remains conservative around
-unexpected unchecked exceptions during publication, installation or replacement.
-The legacy application publication machinery intentionally keeps uncertainty
-monotonic after publication entry, even when a later SPI retry reports Failed or
-ExistingDifferent. Only positive acknowledgements for the entire frozen operation
-produce Saved. Vault lifecycle adaptation uses positive no-mutation evidence to
-map Failed/AlreadyPresent without losing the Uncertain distinction.
-
-Known structural namespace hazards consistently map to UNSAFE_NAMESPACE through
-one shared NIO classification helper: non-directory/symlink namespace components,
-unsafe nonregular publication targets and alias collisions without an exact
-winner. Exact-name lookup is rechecked when a namespace may have been created
-concurrently. Ordinary inability to observe/access state remains UNAVAILABLE;
-unsupported operations remain UNSUPPORTED. A freshly observed nonregular read
-target still uses BoundedRead.WrongKind, preserving the distinct read outcome.
-No exception-message parsing or provider exception hierarchy crosses the SPI.
-
-## Ownership, construction and migration
-
-Passing a nonnull TotipoStore to `Totipo.open(store, password)` or
-`Totipo.create(store, password)` transfers ownership for that call. The caller
-must not subsequently use or close the store. Failure, including invalid password
-input, closes it before returning/throwing; success transfers it to VaultSession.
-Session close closes it exactly once, including repeated application close.
-Calls on one store/its stages are serialized by core; providers need not implement
-concurrent operations on a single handle. Cleanup is best-effort.
-
-`NioTotipoStore.open(root)` observes an existing directory only. It creates no
-vault, object namespace, canonical objects, repairs, normalization or cleanup.
-Mutations occur only via explicit publication/preparation/mutation methods.
-
-The normal path is NioTotipo -> NioTotipoStore -> Totipo -> core StoreAdapter ->
-the proven application/protocol machinery -> VaultSession. StoreAdapter
-interprets canonical object names and fixed v1 sizes exclusively in core.
-It maps SPI outcomes onto DiscoverySource, V1ObjectPublicationStore,
-VaultBootstrapStorage and VaultBootstrapReplacementStorage rather than rewriting
-graph/fold or lifecycle logic. Size-only invalid read outcomes are represented
-as invalid-length bounded streams for these legacy readers; no valid record is
-manufactured.
-
-ApplicationVaults is clearly superseded as a provider bridge. Its three-interface
-overloads remain for existing low-level callers and tests, while its store-facing
-overloads construct the internal adapter. New providers implement TotipoStore,
-not those old interfaces. Legacy NIO wrappers delegate to shared layout-only
-enumeration, publication and staging engines; they do not maintain independent
-mutation implementations. StorageDurability remains the existing NIO-specific
-directory acknowledgement capability.
-
-No wire format, r18 semantics, crypto, TOKEN grammar, graph/fold, merge,
-application projection, state-stream, or application persistence semantics are
-redefined here. Existing conformance and facade tests remain authoritative.
-
-## r18 scope qualification
-
-The NIO provider and low-level core orchestration claim v1 store conformance for
-observation, immutable object publication, initial VAULT installation, exact
-compare-before-replace and replacement, and explicit durability-result handling,
-subject to README's provider qualification. Core performs authentication and the
-exact pre-replacement comparison; `replaceCanonical` itself is not atomic CAS.
-Tests of abstract outcomes and accepted force calls do not establish physical
-power-loss behavior on every provider or filesystem.
-
-The [focused §12 facade audit](review/V1_R18_CAUSAL_FACT_METADATA_REPORT.md) confirms
-that private captured ancestry indexes do not represent historical TOKEN objects.
-Actually represented heads retain exact metadata independently. This creates no
-historical-object persistence requirement and changes no store/SPI behavior.
-
-Pre-creation `scanObjects()` can expose possible orphan-looking names during
-available observation, before ownership transfers to `Totipo.create`. These are
-unauthenticated context, not proof of a recoverable vault or a creation veto.
-Exhaustive enumeration is not required. Application warning/confirmation policy
-and application conformance are outside this storage contract.
+Opening NIO observes an existing safe root without creating namespaces, objects,
+VAULT, normalization or cleanup. The two-module implementation bridge
+`format.VaultLifecycle` uses TotipoStore directly; codecs and protocol algorithms
+remain internal. There is one provider boundary.

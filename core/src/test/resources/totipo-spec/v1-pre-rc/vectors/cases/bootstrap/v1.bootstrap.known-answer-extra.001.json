@@ -1,0 +1,17 @@
+{
+  "format": "totipo-case-v1",
+  "id": "v1.bootstrap.known-answer-extra.001",
+  "operation": "bootstrap",
+  "expected": "VALID",
+  "notes": "Static root-wrap known answer using public fixed test inputs; shared fixture roots do not authorize same-root alternate legitimate VAULTs or root reuse in creation.",
+  "root_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+  "bootstrap": {
+    "password_hex": "7265706c6163656d656e742070617373776f7264",
+    "salt_hex": "55555555555555555555555555555555",
+    "nonce_hex": "666666666666666666666666",
+    "wrap_key_hex": "00085a5185df21c83d59149d96d662565b91b694b669c909183fb29482885917",
+    "header_hex": "544f5449504f2d564c540155555555555555555555555555555555666666666666666666666666",
+    "record_hex": "544f5449504f2d564c540155555555555555555555555555555555666666666666666666666666dac5f71eb218262c9c9f83834a414677bab2eddd62e03c9bde0ede6d638af60900641b921195ba7150416be5a7b323bb",
+    "vault_id_hex": "18f5986754487c39185ffa0251547d25974c05279d78ec44c69adabe0d65e369"
+  }
+}

@@ -19,7 +19,7 @@ import org.junit.jupiter.api.TestFactory;
 class BootstrapVectorTest {
     @Test
     void pinsBootstrapCategory() throws Exception {
-        assertEquals(Set.of("v1.bootstrap.ascii.001", "v1.bootstrap.empty.001", "v1.bootstrap.unicode.001", "v1.bootstrap.rewrap.001"),
+        assertEquals(Set.of("v1.bootstrap.ascii.001", "v1.bootstrap.empty.001", "v1.bootstrap.unicode.001", "v1.bootstrap.known-answer-extra.001", "v1.bootstrap.vault-id-mutation.001"),
                 VectorCaseLoader.bootstrapCases().stream().map(Case::id).collect(Collectors.toSet()));
     }
 
@@ -57,7 +57,13 @@ class BootstrapVectorTest {
         assertEquals(1, calls.get());
         assertEquals(VaultUnlockResult.Status.UNLOCKED, result.status());
         assertTrue(Arrays.equals(vector.data().field("root_hex").hex(), result.root()), "Root known answer");
-        assertTrue(Arrays.equals(b.field("fingerprint_hex").hex(), result.fingerprint()), "Fingerprint known answer");
+        assertArrayEquals(b.field("vault_id_hex").hex(), org.totipo.Totipo.vaultId(record).bytes());
+        if (b.has("changed_record_hex")) {
+            byte[] changed = b.field("changed_record_hex").hex();
+            assertArrayEquals(b.field("changed_vault_id_hex").hex(), org.totipo.Totipo.vaultId(changed).bytes());
+            assertNotEquals(org.totipo.Totipo.vaultId(record), org.totipo.Totipo.vaultId(changed));
+            checkFailure(new VaultUnlocker().unlock(changed, password));
+        }
         assertArrayEquals(original, password);
 
         // Decode only public fixture input to obtain characters; production never converts password bytes to String.
@@ -105,6 +111,5 @@ class BootstrapVectorTest {
     private static void checkFailure(VaultUnlockResult result) {
         assertEquals(VaultUnlockResult.Status.AUTHENTICATION_FAILED, result.status());
         assertNull(result.root());
-        assertThrows(IllegalStateException.class, result::fingerprint);
     }
 }
