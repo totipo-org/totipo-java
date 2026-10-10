@@ -1,0 +1,12 @@
+// Populate only the isolated Gradle home from nixpkgs' fixed replay cache.
+// Gradle still owns resolution, strict locks and dependency verification.
+gradle.projectsLoaded {
+    rootProject.tasks.register('qualificationDependencies') {
+        doLast {
+            rootProject.allprojects.each { project ->
+                project.configurations.findAll { it.canBeResolved }.each { it.resolve() }
+                project.buildscript.configurations.findAll { it.canBeResolved }.each { it.resolve() }
+            }
+        }
+    }
+}

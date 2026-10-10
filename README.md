@@ -73,8 +73,40 @@ compile with `--release 17`; checks inspect every production class (major 61,
 minor 0). The build uses JDK 25 and pinned Gradle 9.8.0, strict dependency verification
 and locks. No native access/FFM or Android dependency is required.
 
-Build in the existing development shell (`nix develop` or `direnv allow`) or with
-JDK 25 available:
+Normal repository qualification on **x86_64-linux** is exactly:
+
+```sh
+nix flake check path:.
+```
+
+This is the authoritative CI and reproducible qualification environment. It uses
+JDK 25, Gradle 9.8.0 and Python 3 from the committed Nix lockfile, with a fixed
+Gradle dependency cache. It runs the full Java tests, r19 accounting/integrity,
+build/Javadocs/sources, publication verification, independent module and POM-only
+consumers, and Python release guardrails. Qualification runs offline after filling
+an isolated Gradle home from the fixed local replay cache; Gradle locks and strict
+verification remain enabled. No signing, upload, tagging or release action runs.
+No second ordinary Nix build is needed. `nix build` optionally materializes the
+same derivation's ten verified unsigned Maven-shaped artifacts under
+`result/publication/`, plus inventory and small qualification summaries.
+
+`package-deps.json` materializes the already locked/verified dependencies using
+nixpkgs `gradle.fetchDeps`. Only when dependency inputs change, a human runs:
+
+```sh
+nix run path:.#update-package-deps
+```
+
+Review every generated coordinate/version, artifact URL and SRI hash against the
+Gradle locks, verification metadata and canonical artifacts, including build-plugin
+transitives and parent/BOM metadata. Reject unexpected modules, dynamic versions
+and snapshots. Local Totipo consumer artifacts must come from staging, never from
+this download cache. Cache regeneration is separate from qualification and never
+runs in CI. Keep `flake.lock` pinned; updating dependencies does not authorize a
+Nix input/toolchain update. Agents must not run Nix.
+
+Direct Gradle commands remain supported for development with JDK 25, in the
+existing development shell (`nix develop` or `direnv allow`) or on the host:
 
 ```sh
 ./gradlew clean test
@@ -155,7 +187,7 @@ public compile dependency. Both artifacts require Java 17; tests, test fixtures,
 and the specification snapshot are excluded from publications.
 
 <!-- prepared-release:start -->
-Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 <!-- prepared-release:end -->
 
 0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.

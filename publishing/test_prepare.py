@@ -180,6 +180,33 @@ release selection. The published 0.1.4 examples above are unchanged.
         self.assertEqual((self.root / "VERSION").read_text(), "0.2.1\n")
         self.assertIn("Java 0.2.1 is prepared", (self.root / "README.md").read_text())
 
+    def test_released_status_check_is_write_free_and_future_prepare_is_preserved(self):
+        release.prepare("0.2.0")
+        self.finish_notes()
+        for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
+            path = self.root / name
+            path.write_text(path.read_text().replace(
+                "Java 0.2.0 is prepared locally and not yet released.",
+                "Java 0.2.0 is released."))
+        before = self.files()
+        release.prepare("0.2.0", check=True)
+        self.assertEqual(self.files(), before)
+        release.prepare("0.2.1")
+        for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
+            self.assertIn("Java 0.2.1 is prepared locally and not yet released.",
+                          (self.root / name).read_text())
+
+    def test_duplicate_released_status_fails_before_writes(self):
+        release.prepare("0.2.0")
+        path = self.root / "README.md"
+        text = path.read_text().replace("Java 0.2.0 is prepared locally and not yet released.",
+                                        "Java 0.2.0 is released.")
+        path.write_text(text + text)
+        before = self.files()
+        with self.assertRaisesRegex(RuntimeError, "ambiguous"):
+            release.prepare("0.2.1")
+        self.assertEqual(self.files(), before)
+
     def test_check_rejects_inconsistent_lock(self):
         release.prepare("0.2.0")
         self.finish_notes()

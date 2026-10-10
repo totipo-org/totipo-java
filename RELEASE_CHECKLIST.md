@@ -1,7 +1,7 @@
 # Totipo Java 0.2.0 release checklist
 
 <!-- prepared-release:start -->
-Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 <!-- prepared-release:end -->
 Independent immutable object-candidate validation remains available.
 The implementation version comes from `VERSION`; protocol compatibility is independent. The protocol
@@ -62,10 +62,9 @@ validation. The one-time legacy 0.1.5 status conversion is explicitly bounded.
 Follow these separate gates in order:
 
 1. Source preparation and breaking API review against canonical Central 0.1.5.
-2. Full local credential-free qualification below; retain the normal inventory
-   outside build outputs before forced offline rebuilding.
-3. Human `nix flake check`. The current 0.1.5 practice requires this alone; no
-   additional full Nix-shell Gradle gate is introduced.
+2. Human routine source qualification: `nix flake check path:.` alone.
+3. Separate release artifact reproducibility comparison below; retain the normal
+   inventory outside build outputs before forced offline rebuilding.
 4. Human review, release-source commit and review through the usual process.
 5. Release-source CI, separately from implementation-commit CI; require success.
 6. Explicitly authorized protected release dispatch and environment approval.
@@ -154,18 +153,34 @@ Ordinary CI, preflight, remote verification and tagging have no access to them.
 no additional PAT is required. All checkout credentials remain unpersisted;
 final tag push uses an ephemeral process environment for authentication.
 
-## Complete credential-free preflight
+## Routine source qualification and release artifact reproducibility
 
-Use JDK 25 and Python 3.9+ (standard library only), available in `nix develop`.
-The workflow runs the following from the exact commit, with the wrapper JAR
-checksum checked and strict dependency verification/locking preserved:
+The routine human source gate is exactly:
+
+```sh
+nix flake check path:.
+```
+
+It runs the full credential-free Java/build/publication/consumer/Python suite with
+pinned JDK 25, Gradle 9.8.0 and Python 3 on x86_64-linux, including wrapper identity,
+Java 17 bytecode, both consumer modes, full accounting before focused integrity,
+and all 99 snapshot hashes. No second ordinary Nix build or duplicate direct
+Gradle suite is required for routine source qualification. See README for the
+fixed dependency-cache update/review procedure; regeneration is not a routine gate.
+Agents must not run Nix; the human runs the command above.
+
+Release preparation additionally retains the established **normal versus forced
+offline ten-artifact comparison** below. This deliberate pair supplies release
+reproducibility evidence; a Nix check or a deliberate Nix rebuild does not replace
+it. Use JDK 25 and Python 3.9+ (standard library only). The protected release
+workflow remains separate and repeats its exact-source preflight and comparison
+before any approved signing/publication. It continues verifying full accounting,
+POM-only consumers and focused integrity independently.
 
 ```sh
 ./gradlew clean test build verifyPublication consumerSmoke
 python3 -B publishing/release.py tests
-python3 -B -m unittest discover -s publishing -p 'test_*.py'
-python3 -B publishing/verify-publication.py
-# Use a directory outside build outputs; preserve exact normal inventory.
+# Use a directory outside build outputs; preserve the exact normal inventory.
 cp build/publication-sha256.json /tmp/totipo-normal-publication-sha256.json
 ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks \
   clean test build verifyPublication consumerSmoke
@@ -174,12 +189,6 @@ EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-sha256.json)" \
   REQUESTED_VERSION="$(cat VERSION)" REQUESTED_COMMIT="$(git rev-parse HEAD)" \
   DISPATCH_REF=refs/heads/main DISPATCH_SHA="$(git rev-parse HEAD)" \
   python3 -B publishing/release.py compare
-./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
-./gradlew :core:test \
-  --tests org.totipo.conformance.SpecSnapshotIntegrityTest \
-  --tests org.totipo.conformance.R19ProfileIntegrityTest
-python3 -B publishing/release.py focused-tests
-(cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
 git diff --check
 git status --short
 ```

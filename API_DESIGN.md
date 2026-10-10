@@ -14,7 +14,7 @@ provider, exposing core transitively. Ordinary applications use `NioTotipo` and
 the high-level API; publication does not promote experimental SPI internals to
 normal application entry points. See README for release availability and coordinates.
 <!-- prepared-release:start -->
-Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 <!-- prepared-release:end -->
 
 0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.

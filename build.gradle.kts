@@ -117,5 +117,9 @@ tasks.register<Exec>("verifyPublication") {
 tasks.register<Exec>("consumerSmoke") {
     group = "verification"
     dependsOn("verifyPublication")
-    commandLine("./gradlew", "-p", "publishing/consumer-smoke", "--offline", "clean", "check")
+    // Nix supplies its pinned Gradle; ordinary development keeps the reviewed wrapper.
+    val executable = providers.gradleProperty("consumerGradleExecutable").getOrElse("./gradlew")
+    commandLine(executable, "-p", "publishing/consumer-smoke", "--offline",
+        "--no-daemon", "--no-build-cache", "--rerun-tasks",
+        "--dependency-verification=strict", "clean", "check")
 }

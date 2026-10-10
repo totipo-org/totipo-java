@@ -319,8 +319,15 @@ def replace_once(text, old, new, path):
 def status_block(text, old, new, legacy, path):
     start, end = "<!-- prepared-release:start -->", "<!-- prepared-release:end -->"
     before = f"{start}\nJava {old} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
+    released = f"{start}\nJava {old} is released. See RELEASE_CHECKLIST.md.\n{end}"
     after = f"{start}\nJava {new} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
     if start in text or end in text:
+        # Current docs may record a completed release. Keep --check write-free;
+        # a newer preparation still produces the same prepared-status contract.
+        if released in text:
+            before = released
+            if old == new:
+                after = released
         return replace_once(text, before, after, path)
     require(old == "0.1.5", f"Missing release metadata marker in {path}")
     return replace_once(text, legacy, after, path)
