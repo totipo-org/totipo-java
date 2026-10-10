@@ -270,6 +270,80 @@ Library-created sessions implement it.
 
 ## Replay-latest stream
 
+### Observation-pass ordering and composition
+
+For library-created Java 0.2.0 sessions using NIO or a store that does not reenter
+session operations from provider calls, an observation pass starts its configured-
+store observation by scanning objects, reads/validates the discovered candidates,
+evaluates the graph, and constructs its immutable result. A normally completed
+pass installs exactly one `Finished` state, including when storage problems yield
+diagnostics. Installation makes that state the latest returned by `state()` and
+available to `states()` before any subsequent pass can start its store observation.
+Passes do not overlap, including refresh and normal merge-save prepublication
+observations. Initial open/create observation and refreshes requested after saves
+use the same ordering. The initial `Enumerating(0)` state is not a completed pass;
+closure/fatal failure terminates the stream without inventing a Finished result.
+
+Each separately completed pass installs a distinct `VaultState` reference, even
+when its descriptive contents equal those of the preceding pass. This is an
+intentional observation-instance guarantee for these sessions, not value equality,
+a public generation number or a freshness token. Implementations may share
+immutable projections internally. Repeated `state()` reads and replay delivery
+can return the same instance; they do not establish another completed pass.
+
+Within one subscription, later Finished deliveries represent later completed
+passes. Replay-latest may skip any intermediate states, even with unlimited
+demand, but never reverses their pass order. Delivery is asynchronous: by callback
+entry `state()` may already return a later installed state. A callback does not
+pin the session's latest state, and independent subscriptions have no mutual
+callback ordering. Installation precedes offering the state for delivery; it does
+not wait for client callbacks before allowing another pass.
+
+`requestRefresh()` returning establishes only admission of a possibly coalesced
+request for local observation. It does not establish pass start or completion,
+one pass or callback per request, or correlation between a request and a delivered
+state. Closing or fatal failure may prevent pending work from observing at all.
+It is neither an acknowledgement nor a synchronization barrier.
+
+For `NioStoreComposition.coordinatedDelegate`, the owner must serialize all store
+calls and complete external mutation batches in one root-wide coordination domain,
+including all sessions, writers and handles. A pass whose store observation starts
+after a successful coordinated local immutable-object import completes reads the
+resulting local store, subject to storage availability/errors and subsequent
+coordinated changes. Coordination alone does not make an entire scan/read pass an
+atomic store snapshot. No independent writer may bypass that domain. The owner
+must supply the synchronization and storage visibility; Java's per-session gate
+does not synchronize external bridge mutations or enforce the owner's policy.
+
+Under those conditions, an import-before-publish observation barrier can capture
+a baseline **after import completion**, subscribe, request refresh, and accept a
+Finished reference different from that baseline; then repeat with a new baseline
+captured **after the first acceptance**. The second accepted Finished represents
+a pass whose store observation started after import completion. The first accepted
+pass may already have been in flight during import; its state must be installed
+before the second pass can begin. Skipping passes only advances this ordering.
+Unrelated merge/save observations obey the same pass ordering and may satisfy a
+wait; the accepted state need not belong to the immediately preceding request.
+
+This composition requires the same live library session throughout, successful
+immutable import in the shared domain, no removal/replacement of imported data
+before the relevant observation, positive subscription demand, and correctly
+synchronized baseline/acceptance handling. Store implementations must not reenter
+session operations from provider calls; NIO observation does not do so.
+Failure, cancellation, closure or
+timeout must refuse authorization; terminal callbacks are not Finished evidence.
+Before outbound publication the application must separately require its final
+state to be Finished and satisfy its diagnostic/integrity policy. Cancellation
+cannot retract a client callback already entered. This is a local ordering proof,
+not a guarantee of progress within a deadline.
+
+It proves no provider/cloud freshness, peer receipt, remote history completeness,
+rollback resistance, current global heads or Java merge freshness. It promises
+neither delivery of every state nor a pass per refresh. Even a diagnostic-free
+Finished state does not establish absence of unknown/unavailable history beyond
+what its observation and diagnostics actually establish. Transport/provider safety
+rules and permission to publish remain application responsibilities.
+
 `states()` is a `Flow.Publisher<VaultState>` with independent subscription demand.
 `onSubscribe` is invoked synchronously on the thread calling `subscribe`, before
 asynchronous draining begins. After positive demand, the first state delivered is

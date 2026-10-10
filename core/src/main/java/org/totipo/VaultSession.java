@@ -8,7 +8,9 @@ import java.util.concurrent.Flow;
  */
 public interface VaultSession extends AutoCloseable {
     VaultId vaultId();
-    /** Immediate, I/O-free read of the latest emitted state. */
+    /** Immediate, I/O-free read of the latest emitted state.
+     * Library-created 0.2.0 sessions install a distinct state reference per completed observation pass.
+     * See API_DESIGN.md, Observation-pass ordering and composition, for ordering and barrier assumptions. */
     VaultState state();
     /** Ordered replay-latest publisher with independent coalescing backpressure.
      * Invokes onSubscribe synchronously on the thread calling subscribe.
@@ -17,6 +19,7 @@ public interface VaultSession extends AutoCloseable {
      */
     Flow.Publisher<VaultState> states();
     /** Non-blocking request for another local observation; requests may coalesce.
+     * Return acknowledges no observation start/completion and correlates no state delivery to this request.
      * The observation reads the configured store without mutating semantic vault history.
      * Subsequent emissions do not invalidate older snapshots or same-session references.
      * Requires an open session.

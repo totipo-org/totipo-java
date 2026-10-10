@@ -696,6 +696,128 @@ class PublicApiTest {
             assertEquals(List.of("subscribe", "next entered", "next returned", invalidDemand ? "error" : "complete"), events);
         } finally { releaseNext.countDown(); }
     }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void observationPassPublishesBeforeNextScanAndRefreshReturnIsNotCompletion(boolean identicalContents) throws Exception {
+        var controlled = new OrderedObservationStore(identicalContents);
+        try (var live = ((OpenResult.Opened) Totipo.open(controlled, "password".toCharArray())).session()) {
+            try {
+                assertTrue(controlled.firstEntered.await(5, TimeUnit.SECONDS));
+                controlled.currentState = live::state;
+                var probe = new Probe(); live.states().subscribe(probe);
+                probe.subscription.request(1);
+                assertInstanceOf(ObservationProgress.Enumerating.class, probe.next().observation());
+
+                // A is blocked in its scan. Requests return while A remains unfinished;
+                // B is requested, but cannot enter its scan or replace the initial state.
+                live.requestRefresh(); live.requestRefresh();
+                assertEquals(1, controlled.scans.get());
+                assertEquals(1L, controlled.secondEntered.getCount());
+                assertInstanceOf(ObservationProgress.Enumerating.class, live.state().observation());
+                controlled.firstRelease.countDown();
+                assertTrue(controlled.secondEntered.await(5, TimeUnit.SECONDS));
+
+                // B's entry is a positive synchronization point, not a timed absence
+                // check. A must already be installed, not merely done reading storage.
+                var first = live.state();
+                assertSame(first, controlled.stateAtSecondEntry);
+                assertEquals(new ObservationProgress.Finished(0, false), first.observation());
+                probe.subscription.request(1);
+                assertSame(first, probe.next());
+                controlled.secondRelease.countDown();
+                var second = awaitState(live, s -> s != first && s.observation() instanceof ObservationProgress.Finished);
+                assertNotSame(first, second);
+                assertEquals(new ObservationProgress.Finished(identicalContents ? 0 : 1, !identicalContents), second.observation());
+                if (identicalContents) {
+                    assertEquals(first.tokens(), second.tokens());
+                    assertEquals(first.diagnostics(), second.diagnostics());
+                    assertEquals(first.observation(), second.observation());
+                }
+                probe.subscription.request(1);
+                assertSame(second, probe.next());
+                assertEquals(List.of(first, second), probe.history.subList(1, 3));
+                probe.subscription.cancel();
+            } finally {
+                controlled.firstRelease.countDown(); controlled.secondRelease.countDown();
+            }
+        }
+    }
+    /** Two controlled store observations; no runtime implementation hooks or timing sleeps. */
+    private static final class OrderedObservationStore implements org.totipo.spi.TotipoStore {
+        final CountDownLatch firstEntered = new CountDownLatch(1), firstRelease = new CountDownLatch(1);
+        final CountDownLatch secondEntered = new CountDownLatch(1), secondRelease = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicInteger scans = new java.util.concurrent.atomic.AtomicInteger();
+        final boolean identicalContents;
+        volatile java.util.function.Supplier<VaultState> currentState;
+        volatile VaultState stateAtSecondEntry;
+        OrderedObservationStore(boolean identicalContents) { this.identicalContents = identicalContents; }
+        @Override public org.totipo.spi.ObjectScan scanObjects() {
+            int pass = scans.incrementAndGet();
+            var entered = pass == 1 ? firstEntered : secondEntered;
+            var release = pass == 1 ? firstRelease : secondRelease;
+            if (pass == 2) stateAtSecondEntry = currentState.get();
+            entered.countDown();
+            try {
+                if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Scan not released");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted);
+            }
+            if (pass == 1 || identicalContents) return new org.totipo.spi.ObjectScan.Complete(List.of());
+            return new org.totipo.spi.ObjectScan.Complete(List.of(new org.totipo.spi.ObjectEntry(
+                    new org.totipo.spi.ObjectName("ab".repeat(32)), org.totipo.spi.EntryKind.REGULAR, OptionalLong.of(1))));
+        }
+        @Override public org.totipo.spi.BoundedRead readVault(int expected) {
+            return new org.totipo.spi.BoundedRead.Present(bootstrap.clone());
+        }
+        @Override public org.totipo.spi.BoundedRead readObject(org.totipo.spi.ObjectName name, int expected) {
+            return new org.totipo.spi.BoundedRead.Undersized(1);
+        }
+        @Override public org.totipo.spi.ObjectWrite publishObject(org.totipo.spi.ObjectName name, byte[] bytes) {
+            throw new AssertionError("Observation must not publish");
+        }
+        @Override public org.totipo.spi.VaultCreate createVault(byte[] bytes) {
+            throw new AssertionError("Open must not create");
+        }
+        @Override public void close() { }
+    }
+    @Test void observationAfterCoordinatedExternalImportReadsInstalledLocalObjects(@TempDir Path root) throws Exception {
+        var imported = create("external import");
+        Files.write(root.resolve("vault"), bootstrap);
+        var domain = new Object();
+        var delegate = org.totipo.storage.nio.NioStoreComposition.coordinatedDelegate(
+                root, new org.totipo.storage.nio.NioDurability());
+        // All delegate calls and the complete external batch share one domain.
+        var coordinated = new org.totipo.spi.TotipoStore() {
+            public org.totipo.spi.BoundedRead readVault(int expected) {
+                synchronized (domain) { return delegate.readVault(expected); }
+            }
+            public org.totipo.spi.ObjectScan scanObjects() {
+                synchronized (domain) { return delegate.scanObjects(); }
+            }
+            public org.totipo.spi.BoundedRead readObject(org.totipo.spi.ObjectName name, int expected) {
+                synchronized (domain) { return delegate.readObject(name, expected); }
+            }
+            public org.totipo.spi.ObjectWrite publishObject(org.totipo.spi.ObjectName name, byte[] bytes) {
+                synchronized (domain) { return delegate.publishObject(name, bytes); }
+            }
+            public org.totipo.spi.VaultCreate createVault(byte[] bytes) {
+                synchronized (domain) { return delegate.createVault(bytes); }
+            }
+            public void close() { synchronized (domain) { delegate.close(); } }
+        };
+        try (var live = ((OpenResult.Opened) Totipo.open(coordinated, "password".toCharArray())).session()) {
+            assertTrue(finished(live).tokens().isEmpty());
+            synchronized (domain) {
+                var objects = Files.createDirectory(root.resolve("objects-v1"));
+                for (var object : store.objects.entrySet()) Files.write(objects.resolve(object.getKey()), object.getValue());
+            }
+            live.requestRefresh();
+            var observed = awaitState(live, s -> s.token(imported.id()).isPresent());
+            assertInstanceOf(ObservationProgress.Finished.class, observed.observation());
+            assertTrue(observed.diagnostics().isEmpty());
+            assertEquals(imported.heads().stream().map(TokenHead::revision).toList(),
+                    observed.token(imported.id()).orElseThrow().heads().stream().map(TokenHead::revision).toList());
+        }
+    }
     @Test void replayLatestCoalescesWithoutDemandAndSubscribersAreIndependent() throws Exception {
         var a = new Probe(); var b = new Probe(); session.states().subscribe(a); session.states().subscribe(b);
         assertTrue(a.subscribed); assertTrue(b.subscribed); assertTrue(a.received.isEmpty());
