@@ -10,7 +10,11 @@ public interface VaultSession extends AutoCloseable {
     VaultId vaultId();
     /** Immediate, I/O-free read of the latest emitted state. */
     VaultState state();
-    /** Ordered replay-latest publisher with independent coalescing backpressure. */
+    /** Ordered replay-latest publisher with independent coalescing backpressure.
+     * Invokes onSubscribe synchronously on the thread calling subscribe.
+     * Subsequent state and terminal callbacks are delivered asynchronously through
+     * the common-pool drain and serialized per subscription.
+     */
     Flow.Publisher<VaultState> states();
     /** Non-blocking request for another local observation; requests may coalesce.
      * The observation reads the configured store without mutating semantic vault history.

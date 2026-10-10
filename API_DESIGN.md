@@ -196,9 +196,10 @@ ownership rather than concurrently setting fields and saving.
 Open/create, saves, partial save, retries and session close may block on crypto,
 store I/O or coordination and belong off the UI thread. Candidate validation is
 local but can wait on the provider gate. Closing partial/retry handles can also
-wait on that gate. Subscriber callbacks are serialized per subscription on the
-common pool; different subscribers can execute concurrently. Applications own
-marshalling presentation to their UI thread. The session serializes its provider
+wait on that gate. `onSubscribe` is invoked synchronously on the thread calling
+`subscribe`. Subsequent state and terminal callbacks use the common-pool drain
+and are serialized per subscription; different subscribers can execute concurrently.
+Applications own marshalling presentation to their UI thread. The session serializes its provider
 operations; independent sessions/processes and experimental coordinated provider
 composition retain their separate coordination requirements. See
 [Blocking, threading and close](#blocking-threading-and-close) for lock and closure details.
@@ -270,14 +271,16 @@ Library-created sessions implement it.
 ## Replay-latest stream
 
 `states()` is a `Flow.Publisher<VaultState>` with independent subscription demand.
-`onSubscribe` comes first. After positive demand, the first state delivered is
+`onSubscribe` is invoked synchronously on the thread calling `subscribe`, before
+asynchronous draining begins. After positive demand, the first state delivered is
 the latest known state at delivery (at least as new as at the demand request).
 Later deliveries have strictly increasing hidden sequence numbers. Subscribers
 with zero demand retain only the latest available state; there is no unbounded
 per-state queue. Demand saturates at `Long.MAX_VALUE`. Nonpositive demand signals
 `onError` for that subscriber. Subscriber callback failures cancel that subscriber.
 
-Callbacks are serialized per subscription and dispatched on the common pool;
+Subsequent `onNext`, `onError`, and `onComplete` callbacks are delivered
+asynchronously through the common-pool drain and serialized per subscription;
 application callbacks hold neither the provider gate, local secret/lifecycle lock,
 nor publisher monitor.
 Ordinary storage failures emit diagnostics rather than terminating the publisher.

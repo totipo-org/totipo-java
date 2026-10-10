@@ -644,6 +644,58 @@ class PublicApiTest {
         @Override public void onComplete() { assertTrue(subscribed); terminalSignals.incrementAndGet(); terminal = true; completion.complete(null); }
         VaultState next() throws Exception { var state = received.poll(5, TimeUnit.SECONDS); assertNotNull(state); return state; }
     }
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void subscriptionEstablishmentIsSynchronousAndLaterCallbacksAreAsynchronousAndSerialized(boolean invalidDemand) throws Exception {
+        var caller = Thread.currentThread();
+        var subscribedOn = new CompletableFuture<Thread>();
+        var subscription = new CompletableFuture<Flow.Subscription>();
+        var nextOn = new CompletableFuture<Thread>();
+        var terminalOn = new CompletableFuture<Thread>();
+        var events = new CopyOnWriteArrayList<String>();
+        var releaseNext = new CountDownLatch(1);
+        try {
+            session.states().subscribe(new Flow.Subscriber<>() {
+                @Override public void onSubscribe(Flow.Subscription value) {
+                    events.add("subscribe");
+                    subscribedOn.complete(Thread.currentThread());
+                    subscription.complete(value);
+                    value.request(1);
+                }
+                @Override public void onNext(VaultState state) {
+                    events.add("next entered");
+                    nextOn.complete(Thread.currentThread());
+                    try {
+                        if (!releaseNext.await(5, TimeUnit.SECONDS)) {
+                            terminalOn.completeExceptionally(new AssertionError("State callback was not released"));
+                            return;
+                        }
+                        events.add("next returned");
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        terminalOn.completeExceptionally(interrupted);
+                    }
+                }
+                @Override public void onError(Throwable error) {
+                    events.add("error");
+                    if (error instanceof IllegalArgumentException) terminalOn.complete(Thread.currentThread());
+                    else terminalOn.completeExceptionally(error);
+                }
+                @Override public void onComplete() {
+                    events.add("complete");
+                    terminalOn.complete(Thread.currentThread());
+                }
+            });
+            // No wait: establishment must have completed before subscribe returned.
+            assertSame(caller, subscribedOn.getNow(null));
+            assertNotSame(caller, nextOn.get(5, TimeUnit.SECONDS));
+            if (invalidDemand) subscription.getNow(null).request(0);
+            else session.close();
+            assertFalse(terminalOn.isDone());
+            releaseNext.countDown();
+            assertNotSame(caller, terminalOn.get(5, TimeUnit.SECONDS));
+            assertEquals(List.of("subscribe", "next entered", "next returned", invalidDemand ? "error" : "complete"), events);
+        } finally { releaseNext.countDown(); }
+    }
     @Test void replayLatestCoalescesWithoutDemandAndSubscribersAreIndependent() throws Exception {
         var a = new Probe(); var b = new Probe(); session.states().subscribe(a); session.states().subscribe(b);
         assertTrue(a.subscribed); assertTrue(b.subscribed); assertTrue(a.received.isEmpty());
