@@ -33,7 +33,7 @@ VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choo
 and review a new release version and matching notes before using this checklist.
 org.totipo:totipo-core:0.1.5
 org.totipo:totipo-storage-nio:0.1.5
-`v0.1.5`
+Annotated source tag convention: `v0.1.5`
 review/V0_1_5_RELEASE_NOTES.md
 `version`: `0.1.5`
 """)
@@ -151,9 +151,9 @@ release selection. The published 0.1.4 examples above are unchanged.
 
     def test_missing_metadata_and_ambiguous_occurrences_fail_before_writes(self):
         for path, extra in (("API_DESIGN.md", "unexpected layout"),
-                            (".github/workflows/release.yml", "extra 0.1.5"),
-                            ("README.md", "extra 0.1.5"),
-                            ("RELEASE_CHECKLIST.md", "extra 0.1.5")):
+                            (".github/workflows/release.yml", "Exact VERSION to release (for example, 0.1.5)"),
+                            ("README.md", "<!-- prepared-release:start -->"),
+                            ("RELEASE_CHECKLIST.md", "org.totipo:totipo-core:0.1.5")):
             before = self.files()
             file = self.root / path
             file.write_text(extra if path == "API_DESIGN.md" else file.read_text() + extra)
@@ -214,6 +214,85 @@ release selection. The published 0.1.4 examples above are unchanged.
         lock.write_text(lock.read_text().replace("totipo-core:0.2.0", "totipo-core:0.1.5"))
         with self.assertRaises(RuntimeError):
             release.prepare("0.2.0", check=True)
+
+    def released_source_fixture(self):
+        # Root Markdown is excluded from Nix qualification. Build a deterministic
+        # released fixture and embed the actual API_DESIGN scheduling paragraph.
+        release.prepare("0.2.0")
+        self.finish_notes()
+        for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
+            path = self.root / name
+            path.write_text(path.read_text().replace(
+                "Java 0.2.0 is prepared locally and not yet released.", "Java 0.2.0 is released."))
+        path = self.root / "API_DESIGN.md"
+        path.write_text(path.read_text() + """
+## Operation classes and state-snapshot semantics
+
+This is the application scheduling model for the existing 0.2.0 API. The detailed
+operation contracts below, especially merge freshness and persistence knowledge,
+remain authoritative for their specific rules.
+""")
+
+    def test_current_released_source_plan_and_check_are_write_free(self):
+        self.released_source_fixture()
+        before = self.files()
+        with patch.object(Path, "write_text", side_effect=AssertionError("No writes")):
+            plan = release.preparation_plan("0.2.0", "0.2.0")
+            release.prepare("0.2.0", check=True)
+        self.assertTrue(all(before[name] == text.encode() for name, text in plan.items()))
+        self.assertEqual(self.files(), before)
+        self.assertIn("This is the application scheduling model for the existing 0.2.0 API. The detailed",
+                      plan["API_DESIGN.md"])
+
+    def test_future_plan_only_changes_owned_locations_preserving_explanatory_prose(self):
+        self.released_source_fixture()
+        for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
+            path = self.root / name
+            path.write_text(path.read_text() + "\nHistorical example: the 0.2.0 client used this contract.\n")
+        before = self.files()
+        plan = release.preparation_plan("0.2.0", "0.2.1")
+        self.assertEqual(self.files(), before)
+        self.assertEqual(set(plan), {"VERSION", "RELEASE_CHECKLIST.md", ".github/workflows/release.yml",
+                                    "publishing/consumer-smoke/gradle.lockfile", "README.md", "API_DESIGN.md"})
+        for name in ("README.md", "API_DESIGN.md"):
+            self.assertEqual(plan[name], before[name].decode().replace(
+                "Java 0.2.0 is released.", "Java 0.2.1 is prepared locally and not yet released."))
+        for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
+            self.assertIn("Historical example: the 0.2.0 client used this contract.", plan[name])
+        self.assertEqual(plan["VERSION"], "0.2.1\n")
+        self.assertIn("Annotated source tag convention: `v0.2.1`", plan["RELEASE_CHECKLIST.md"])
+        self.assertIn("review/V0_2_1_RELEASE_NOTES.md", plan["RELEASE_CHECKLIST.md"])
+        self.assertIn("Exact VERSION to release (for example, 0.2.1)", plan[".github/workflows/release.yml"])
+        self.assertEqual(plan["publishing/consumer-smoke/gradle.lockfile"],
+                         before["publishing/consumer-smoke/gradle.lockfile"].decode().replace(":0.2.0=", ":0.2.1="))
+
+    def test_owned_metadata_stale_conflicting_and_duplicate_slots_fail(self):
+        self.released_source_fixture()
+        cases = [
+            ("VERSION", "0.2.0", "0.1.5"),
+            ("API_DESIGN.md", "Java 0.2.0 is released.", "Java 0.1.5 is released."),
+            ("RELEASE_CHECKLIST.md", "org.totipo:totipo-core:0.2.0", "org.totipo:totipo-core:0.1.5"),
+            ("RELEASE_CHECKLIST.md", "`version`: `0.2.0`", "`version`: `0.1.5`"),
+            ("RELEASE_CHECKLIST.md", "review/V0_2_0_RELEASE_NOTES.md", "review/V0_1_5_RELEASE_NOTES.md"),
+            (".github/workflows/release.yml", "for example, 0.2.0", "for example, 0.1.5"),
+            ("publishing/consumer-smoke/gradle.lockfile", "totipo-core:0.2.0", "totipo-core:0.1.5"),
+            ("API_DESIGN.md", "", "<!-- prepared-release:start -->\nJava 0.1.5 is released.\n<!-- prepared-release:end -->"),
+            ("README.md", "", "<!-- prepared-release:end -->"),
+            ("publishing/consumer-smoke/gradle.lockfile", "", "\norg.totipo:totipo-core:0.1.5=runtimeClasspath\n"),
+            ("RELEASE_CHECKLIST.md", "", "\norg.totipo:totipo-core:0.1.5\n"),
+            ("RELEASE_CHECKLIST.md", "", "\n`version`: `0.2.0`\n"),
+            (".github/workflows/release.yml", "", "\nExact VERSION to release (for example, 0.1.5)\n"),
+        ]
+        for name, old, new in cases:
+            path = self.root / name
+            original = path.read_text()
+            path.write_text(original.replace(old, new) if old else original + new)
+            before = self.files()
+            for target in ("0.2.0", "0.2.1"):
+                with self.subTest(name=name, new=new, target=target), self.assertRaises(RuntimeError):
+                    release.preparation_plan("0.2.0", target)
+                self.assertEqual(self.files(), before)
+            path.write_text(original)
 
     def test_real_pin_and_snapshot_integrity_and_corruption(self):
         shutil.copyfile(self.repository / "SPEC_PIN.md", self.root / "SPEC_PIN.md")

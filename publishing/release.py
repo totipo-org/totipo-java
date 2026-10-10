@@ -316,12 +316,23 @@ def replace_once(text, old, new, path):
     return text.replace(old, new)
 
 
+def owned_version(text, template, current, target, path):
+    """Validate one declared metadata slot, including duplicates with other versions."""
+    prefix, suffix = template.split("{version}")
+    pattern = re.escape(prefix) + r'([^\s`"<>/=(),]+)' + re.escape(suffix)
+    require(re.findall(pattern, text) == [current],
+            f"Unexpected or ambiguous release metadata in {path}: {template}")
+    return replace_once(text, template.format(version=current), template.format(version=target), path)
+
+
 def status_block(text, old, new, legacy, path):
     start, end = "<!-- prepared-release:start -->", "<!-- prepared-release:end -->"
     before = f"{start}\nJava {old} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
     released = f"{start}\nJava {old} is released. See RELEASE_CHECKLIST.md.\n{end}"
     after = f"{start}\nJava {new} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
     if start in text or end in text:
+        require(text.count(start) == text.count(end) == 1,
+                f"Unexpected or ambiguous release metadata markers in {path}")
         # Current docs may record a completed release. Keep --check write-free;
         # a newer preparation still produces the same prepared-status contract.
         if released in text:
@@ -334,34 +345,40 @@ def status_block(text, old, new, legacy, path):
 
 
 def preparation_plan(current, target):
-    """Known-file edits only. Validate every layout before the caller writes any file."""
+    """Edit only declared metadata slots; explanatory/history prose is not owned.
+
+    README/API_DESIGN ownership is limited to the prepared-release block (or the
+    exact legacy paragraph). Version mentions elsewhere may remain historical
+    across releases. Validate every owned layout before the caller writes.
+    """
+    require((ROOT / "VERSION").read_text() == current + "\n", "VERSION differs from current version")
     changes = {"VERSION": target + "\n"}
     path = "RELEASE_CHECKLIST.md"
     text = (ROOT / path).read_text()
-    for old, new in [
-        (f"# Totipo Java {current} release checklist", f"# Totipo Java {target} release checklist"),
-        (f"org.totipo:totipo-core:{current}", f"org.totipo:totipo-core:{target}"),
-        (f"org.totipo:totipo-storage-nio:{current}", f"org.totipo:totipo-storage-nio:{target}"),
-        (f"`v{current}`", f"`v{target}`"),
-        (str(notes_path(current).relative_to(ROOT)), str(notes_path(target).relative_to(ROOT))),
-        (f"`version`: `{current}`", f"`version`: `{target}`"),
-    ]:
-        text = replace_once(text, old, new, path)
+    for template in (
+        "# Totipo Java {version} release checklist",
+        "org.totipo:totipo-core:{version}",
+        "org.totipo:totipo-storage-nio:{version}",
+        "Annotated source tag convention: `v{version}`",
+        "`version`: `{version}`",
+    ):
+        text = owned_version(text, template, current, target, path)
+    text = owned_version(text, "review/V{version}_RELEASE_NOTES.md",
+                         current.replace(".", "_"), target.replace(".", "_"), path)
     text = status_block(text, current, target,
         "VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose\nand review a new release version and matching notes before using this checklist.", path)
-    require(current == target or current not in text, f"Ambiguous old-version occurrence in {path}")
     changes[path] = text
     path = ".github/workflows/release.yml"
     text = (ROOT / path).read_text()
-    changes[path] = replace_once(text, f"Exact VERSION to release (for example, {current})",
-                                f"Exact VERSION to release (for example, {target})", path)
-    require(current == target or current not in changes[path], f"Ambiguous old-version occurrence in {path}")
+    changes[path] = owned_version(text, "Exact VERSION to release (for example, {version})",
+                                  current, target, path)
     path = "publishing/consumer-smoke/gradle.lockfile"
     text = (ROOT / path).read_text()
     for module in ("core", "storage-nio"):
-        text = replace_once(text, f"org.totipo:totipo-{module}:{current}=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath",
-                            f"org.totipo:totipo-{module}:{target}=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath", path)
-    require(current == target or current not in text, f"Ambiguous old-version occurrence in {path}")
+        entry = f"org.totipo:totipo-{module}:{current}=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath"
+        replace_once(text, entry, entry, path)  # Preserve the exact configuration contract.
+        text = owned_version(text, f"org.totipo:totipo-{module}:" + "{version}=",
+                             current, target, path)
     changes[path] = text
     for path, legacy in {
         "README.md": "`VERSION` is the single implementation version source and remains **0.1.5** for\nthis local unreleased implementation. The current v1/r19 change intentionally\nsimplifies pre-1.0 APIs and is breaking; the report recommends a separate minor\nrelease selection. The published 0.1.4 examples above are unchanged.",
@@ -369,15 +386,6 @@ def preparation_plan(current, target):
     }.items():
         text = (ROOT / path).read_text()
         changes[path] = status_block(text, current, target, legacy, path)
-        # Versions outside the status block require an explicitly recognized role.
-        outside = re.sub(r"<!-- prepared-release:start -->.*?<!-- prepared-release:end -->", "", changes[path], flags=re.DOTALL)
-        for line in outside.splitlines():
-            if current in line:
-                known = (f"{current} is intentionally source/binary incompatible with the 0.1.x experimental API." in line)
-                if path == "README.md":
-                    known = known or f"published Java implementation version **{current}**" in line or any(
-                        f'implementation("org.totipo:totipo-{module}:{current}")' in line for module in ("core", "storage-nio"))
-                require(known, f"Ambiguous old-version occurrence in {path}: {line}")
     return changes
 
 

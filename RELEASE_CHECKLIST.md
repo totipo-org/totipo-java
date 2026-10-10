@@ -45,6 +45,16 @@ It validates exact r19 pin/snapshot integrity and known metadata layouts before
 writing VERSION, this checklist, the workflow input example, the two consumer
 self-lock entries, README/API prepared-status blocks, and a version-specific notes
 skeleton if missing. Historical notes/reports and published examples are untouched.
+Ownership is limited to VERSION; this checklist's title, Maven coordinates,
+annotated source tag convention, reviewed-notes path, workflow version input and
+prepared-status block; the workflow input example; the two consumer self-lock
+entries; and README/API_DESIGN prepared-status blocks. Each owned slot must occur
+exactly once and agree with the current version, including during same-version
+checks. Duplicate markers or conflicting owned declarations fail before writes.
+Explanatory/compatibility prose outside these slots is not release metadata:
+for example, API_DESIGN's “existing 0.2.0 API” scheduling context may intentionally
+remain historical after a future release. Preparation neither rejects nor rewrites
+such references; updating them requires separate editorial review.
 Review all edited paths, finish the generated notes, then run:
 
 ```sh
