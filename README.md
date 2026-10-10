@@ -75,7 +75,7 @@ compile with `--release 17`; checks inspect every production class (major 61,
 minor 0). The build uses JDK 25 and pinned Gradle 9.8.0, strict dependency verification
 and locks. No native access/FFM or Android dependency is required.
 
-Normal repository qualification on **x86_64-linux** is exactly:
+The final routine hermetic repository gate on **x86_64-linux** is exactly:
 
 ```sh
 nix flake check path:.
@@ -111,11 +111,31 @@ Direct Gradle commands remain supported for development with JDK 25, in the
 existing development shell (`nix develop` or `direnv allow`) or on the host:
 
 ```sh
-./gradlew clean test
-./gradlew build
-./gradlew dependencies
-./gradlew --offline --no-daemon --no-build-cache --rerun-tasks clean test
+./gradlew test
+./gradlew :core:test --tests 'fully.qualified.TestClass'
+./gradlew :storage-nio:test --tests 'fully.qualified.TestClass'
+./gradlew javadoc
 ```
+
+Record milestone classification before choosing validation. Follow the durable
+[qualification ladder](AGENTS.md#milestone-qualification-ladder): one ordinary
+`./gradlew test` baseline, focused module/API tests during iteration, then once
+stable `./gradlew test build javadoc verifyPublication consumerSmoke`, full test
+accounting, Python guardrails, publication verification and the independent
+POM-only consumer as specified there. Publication, consumer and release-helper
+edits use their relevant focused baselines. Pure docs/Javadocs use Javadoc plus
+contract tests where appropriate; source-Javadoc edits also qualify packaged
+sources/docs with the final normal Java gate. Excluded Markdown-only edits need
+no full Java or Nix rerun. Preserve full test XML/accounting before focused tests
+replace it. `./gradlew build` and `./gradlew dependencies` remain available.
+
+Freeze all qualification inputs before the final human Nix gate. Its suite
+already runs offline; a separate host forced-offline full suite needs a specific
+build/dependency/resolution reason and an explanation of independent evidence.
+The normal/offline ten-artifact comparison remains mandatory for explicit
+[release preparation](RELEASE_CHECKLIST.md#routine-source-qualification-and-release-artifact-reproducibility),
+separate from routine development. Move expensive checks to stable boundaries;
+retain all final qualification coverage.
 
 The provider integration suite assumes a case-sensitive host with symlinks,
 hard links, directory channels accepting force, POSIX permissions and `mkfifo`.

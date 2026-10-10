@@ -62,7 +62,9 @@ validation. The one-time legacy 0.1.5 status conversion is explicitly bounded.
 Follow these separate gates in order:
 
 1. Source preparation and breaking API review against canonical Central 0.1.5.
-2. Human routine source qualification: `nix flake check path:.` alone.
+2. Complete the applicable stable-boundary checks in the
+   [qualification ladder](AGENTS.md#milestone-qualification-ladder), freeze included
+   inputs, then human final routine hermetic qualification: `nix flake check path:.`.
 3. Separate release artifact reproducibility comparison below; retain the normal
    inventory outside build outputs before forced offline rebuilding.
 4. Human review, release-source commit and review through the usual process.
@@ -164,10 +166,25 @@ nix flake check path:.
 It runs the full credential-free Java/build/publication/consumer/Python suite with
 pinned JDK 25, Gradle 9.8.0 and Python 3 on x86_64-linux, including wrapper identity,
 Java 17 bytecode, both consumer modes, full accounting before focused integrity,
-and all 99 snapshot hashes. No second ordinary Nix build or duplicate direct
-Gradle suite is required for routine source qualification. See README for the
-fixed dependency-cache update/review procedure; regeneration is not a routine gate.
-Agents must not run Nix; the human runs the command above.
+and all 99 snapshot hashes. Follow the
+[qualification ladder](AGENTS.md#milestone-qualification-ladder) for classification,
+small baselines, focused iteration and the final normal Java gate before freezing
+included inputs. Never trade final coverage for faster iteration. No second
+ordinary Nix build or automatic duplicate host forced-offline full Gradle suite
+is required: Nix already executes the authoritative offline qualification. A
+separate host offline pass requires a dependency/build/publication-resolution or
+consumer-resolution/cache change and a recorded independent purpose. See README
+for the separate human dependency-cache update and exhaustive review checkpoint;
+regeneration is not a routine gate. Agents must not run Nix; the human runs the
+command above last. Later included-input edits invalidate that result.
+
+Pure docs/Javadocs follow the docs-only profile in AGENTS.md. Excluded Markdown
+process/report edits do not invalidate Java artifacts or require Nix; source
+Javadocs are included and require the documented source-Javadoc qualification.
+Checklist prose alone does not require a release artifact reproducibility rerun
+unless the release operation itself changes. Record gate invocation counts,
+failures/reruns and reasons in the milestone report. Preserve full-suite XML and
+accounting before focused tests or clean rebuilds replace it.
 
 Release preparation additionally retains the established **normal versus forced
 offline ten-artifact comparison** below. This deliberate pair supplies release
