@@ -1,14 +1,23 @@
 package org.totipo;
 
 import java.util.concurrent.Flow;
-/** Live owner of vault secrets and storage. See API_DESIGN.md for normative contracts. */
+/** Live owner of vault secrets and storage. See API_DESIGN.md for normative contracts
+ * and the <a href="https://github.com/totipo-org/totipo-java/blob/main/API_DESIGN.md#operation-classes-and-state-snapshot-semantics">operation/state-snapshot model</a>.
+ * State emissions do not generically invalidate earlier same-session work.
+ * @see VaultState
+ */
 public interface VaultSession extends AutoCloseable {
     VaultId vaultId();
     /** Immediate, I/O-free read of the latest emitted state. */
     VaultState state();
     /** Ordered replay-latest publisher with independent coalescing backpressure. */
     Flow.Publisher<VaultState> states();
-    /** Non-blocking request for another local observation; requests may coalesce. */
+    /** Non-blocking request for another local observation; requests may coalesce.
+     * The observation reads the configured store without mutating semantic vault history.
+     * Subsequent emissions do not invalidate older snapshots or same-session references.
+     * Requires an open session.
+     * @see #states()
+     */
     void requestRefresh();
     /** Synchronously validates an immutable objects-v1 candidate against this open authenticated vault.
      * Success establishes exact physical length (1024 bytes), envelope authentication,

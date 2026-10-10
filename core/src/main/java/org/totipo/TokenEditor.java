@@ -13,7 +13,14 @@ public interface TokenEditor<T extends TokenEditor<T>> extends AutoCloseable {
     T period(Duration value);
     T secret(NewSecret value);
     T metadata(ClientMetadata value);
-    /** May block for observation, local crypto and configured-store I/O. */
+    /** May block for observation, local crypto and configured-store I/O; keep off the UI thread.
+     * Normal merge save checks newer evidence and may return additional conflict;
+     * create/update saves do not perform that merge-only check. No silent rebase occurs.
+     * See the <a href="https://github.com/totipo-org/totipo-java/blob/main/API_DESIGN.md#operation-classes-and-state-snapshot-semantics">operation/state-snapshot model</a>.
+     * @see SaveResult.AdditionalConflict
+     * @see PartialResolution#save()
+     * @see PublicationRetry#retryPublication()
+     */
     SaveResult save();
     @Override void close();
 }

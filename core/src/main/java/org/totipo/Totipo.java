@@ -14,6 +14,12 @@ public final class Totipo {
     private Totipo() {}
     /** Structural VAULT identity without password authentication or Argon2. */
     public static VaultId vaultId(byte[] canonicalVault) { return VaultLifecycle.vaultId(canonicalVault); }
+    /** Opens read-only; may block for KDF, configured-store I/O and coordination.
+     * @see VaultSession#close()
+     */
     public static OpenResult open(TotipoStore store, char[] password) { return VaultLifecycle.openSession(store, password); }
+    /** Creates through the configured store; may block for KDF, I/O and coordination.
+     * @see VaultSession#close()
+     */
     public static CreateVaultResult create(TotipoStore store, char[] password) { return VaultLifecycle.createSession(store, password); }
 }

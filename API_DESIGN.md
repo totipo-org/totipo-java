@@ -110,6 +110,108 @@ accept references from any state of the same session, even if the value/head is
 no longer current. References from another session are programmer errors, even
 when the sessions opened the same root.
 
+## Operation classes and state-snapshot semantics
+
+This is the application scheduling model for the existing 0.2.0 API. The detailed
+operation contracts below, especially merge freshness and persistence knowledge,
+remain authoritative for their specific rules.
+
+**A `VaultState` is an immutable valid observation, not a lease on "currentness".**
+Valid here means a description of what that observation established, including
+its progress and diagnostics; it does not certify complete or freshest history.
+A newer state becoming available does not by itself invalidate an older state,
+its same-session references, or local computations derived from it. It does not
+require asynchronous work to be cancelled or all operations to be globally
+serialized by the application. Operation-specific freshness rules determine
+whether newer evidence matters. Session ownership and closure rules still apply:
+descriptive reads survive close, while secret-backed work requires the owning
+session to remain open. References cannot be transferred to another session.
+
+### Operation taxonomy and application scheduling
+
+| Operation class and actual APIs | Provider I/O | Does new state arrival invalidate work? | Application scheduling guidance |
+| --- | --- | --- | --- |
+| Immutable/descriptive projection: `session.state()`, `VaultState` reads, token descriptors, alternatives, heads and competition | None | No; the old description remains valid for its observation. | Immutable and thread-safe for reads; safe to retain, including after close. |
+| Local secret-backed projection: `state.generateTotp(alternative, instant)` | None; no provider gate | No; uses the supplied valid same-session alternative and session-owned secret material, without provider freshness. | Suitable for ordinary asynchronous presentation work. The application owns late-result relevance; the session must be open for the call. |
+| Local state construction: `state.createToken()`, `state.update(...)`, `state.merge(...)`, builder setters and `merge.keep(...)` | None | No; captured causal bases are not silently rebased. | Factories/setters use the local lock. Confine each builder/editor, including save/setter use, to one thread. No provider mutation occurs until save/publication. |
+| Observation request: `session.requestRefresh()` | None in the request; the scheduled observation reads the configured store | No; requests newer observation without mutating semantic vault history. | Non-blocking; requests may coalesce and resulting passes emit newer states. It is neither a completion barrier nor remote synchronization. |
+| Freshness-gated publication: normal `MergeToken.save()` | Fresh observation, then publication if accepted | Arrival alone does not; the explicit check can find additional relevant heads and return `AdditionalConflict`. | Potentially blocking; schedule off the UI thread and handle the documented freshness outcomes. |
+| Frozen publication/continuation: create/update save once frozen, accepted merge publication, `PartialResolution.save()`, `PublicationRetry.retryPublication()` | Configured-store publication | No automatic rebase; exact frozen output is published. Partial save/retry do not repeat the merge semantic gate. | Potentially blocking; schedule off the UI thread. Respect handle consumption, transfer and session lifetime. |
+| Session/storage lifecycle: `Totipo`/`NioTotipo.open(...)`, `create(...)`, `session.close()` | May perform provider/filesystem I/O or wait for it; open/create also perform KDF work | Governed by lifecycle outcomes, rather than state emission order. | Potentially blocking; keep off Swing EDT and Android main thread. Close rejects new secret-backed work and waits for provider operations before cleanup. |
+| Independent candidate validation: `session.validateObject(...)` | None, but acquires the provider gate | No current-head or freshness claim is made. | Bounded synchronous CPU work that can wait behind unrelated I/O; keep off the UI thread. |
+
+The frozen-publication row describes the publication phase; it does not remove
+the prepublication gate from normal merge save. Ordinary create/update saves
+have no merge-only freshness gate. Local construction still follows the exact
+parent-selection rules in [Editing and deterministic causal bases](#editing-and-deterministic-causal-bases).
+In particular, `update(alternative)` consults the receiving state's equal-valued
+heads, falling back to the supplied captured heads, never the session's later
+state. Merge captures its selected heads and receiving-state frontier separately.
+
+### Validity and presentation relevance
+
+Consider `S1 -> local projection starts -> S2 arrives -> S3 arrives -> projection
+from S1 completes`. The completed projection can remain semantically valid for
+S1. Whether to display it is an independent application-lifecycle decision:
+the same session may need to remain open, the request must still be current, the
+intended token still selected, the application unlocked, and no newer presentation
+request may have superseded it. These are application conditions, not Java
+state-validity rules. A TOTP result also has its own time interval; state advancement
+and time validity are distinct.
+
+For example, capture `VaultState S1`, obtain `TokenAlternative A`, and asynchronously
+call `S1.generateTotp(A, instant)`. If S2 arrives during generation, the calculation
+remains a valid local projection from A/S1. It needs no provider freshness and
+need not be cancelled merely because S2 exists. The application may display the
+result if its presentation request remains current and the session remains open,
+subject to the code's time interval. If S2 changes presentation requirements, the
+application independently decides whether that result is still relevant.
+
+By contrast, construct a merge resolution from S1, then call its `save()`. The
+save's explicit prepublication observation may discover additional relevant heads
+and return `SaveResult.AdditionalConflict`, publishing nothing. That is intentional
+freshness semantics of normal merge save, not a rule for `generateTotp` or immutable
+projections. The precise causal-containment and unavailable-observation rules are
+in [Merge freshness and partial resolution](#merge-freshness-and-partial-resolution).
+
+Retry differs again: its semantic output has already been frozen.
+`PublicationRetry.retryPublication()` republishes exact frozen bytes and identities;
+it does not reobserve or automatically rebase onto the newest state. Likewise,
+`PartialResolution.save()` publishes the frozen original resolution without another
+semantic new-information gate. To request new semantics, explicitly construct a
+new operation. See [Persistence knowledge and handles](#persistence-knowledge-and-handles)
+for uncertainty and capability-transfer rules; abandoning work does not undo
+possible persistence.
+
+### Threading and application lifecycle
+
+Descriptive reads are immutable, I/O-free and thread-safe. TOTP and local
+construction use the local secret/lifecycle lock and can run as ordinary local
+asynchronous work without waiting on unrelated provider scans/publication.
+They are not real-time or contention-free guarantees. Builders remain
+thread-confined, including their saves; asynchronous scheduling must preserve that
+ownership rather than concurrently setting fields and saving.
+
+`requestRefresh()` is a non-blocking, coalescible request; observation runs separately.
+Open/create, saves, partial save, retries and session close may block on crypto,
+store I/O or coordination and belong off the UI thread. Candidate validation is
+local but can wait on the provider gate. Closing partial/retry handles can also
+wait on that gate. Subscriber callbacks are serialized per subscription on the
+common pool; different subscribers can execute concurrently. Applications own
+marshalling presentation to their UI thread. The session serializes its provider
+operations; independent sessions/processes and experimental coordinated provider
+composition retain their separate coordination requirements. See
+[Blocking, threading and close](#blocking-threading-and-close) for lock and closure details.
+
+Applications **should not use VaultState emission order as a generic cancellation
+token**. Do not cancel all local projections when a newer state arrives, assume
+an older alternative/reference became invalid solely because state advanced,
+put every Java operation behind one global UI BUSY state, or silently rebase a
+builder onto the newest state. Use session/lifecycle ownership, explicit request
+generations, token identity and operation-specific freshness outcomes to decide
+whether late asynchronous results remain relevant. Java supplies no generic
+application cancellation policy.
+
 ## Independent immutable object candidates
 
 `session.validateObject(RevisionId objectId, byte[] representation)` synchronously

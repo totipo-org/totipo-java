@@ -9,6 +9,8 @@ Normal filesystem clients use `NioTotipo.open(path, password)` or
 create/update/merge builders and session-backed TOTP. The directory must already
 exist. Opening, creation, saves and close may block; inspect their explicit results.
 See [API_DESIGN.md](API_DESIGN.md) and [SPI_DESIGN.md](SPI_DESIGN.md).
+Application integrators should read the [operation/state-snapshot model](API_DESIGN.md#operation-classes-and-state-snapshot-semantics)
+before designing UI-thread scheduling, refresh, publication or asynchronous projections.
 
 The provider architecture is:
 
