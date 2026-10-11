@@ -27,28 +27,25 @@ class PrepareTests(unittest.TestCase):
         patch.object(release.subprocess, "run", side_effect=AssertionError("Forbidden process")).start()
         patch.object(release.subprocess, "check_output", side_effect=AssertionError("Forbidden process")).start()
         self.branch, self.dirty = "main", ""
-        self.write("VERSION", "0.1.5\n")
-        self.write("RELEASE_CHECKLIST.md", """# Totipo Java 0.1.5 release checklist
-VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose
-and review a new release version and matching notes before using this checklist.
-org.totipo:totipo-core:0.1.5
-org.totipo:totipo-storage-nio:0.1.5
-Annotated source tag convention: `v0.1.5`
-review/V0_1_5_RELEASE_NOTES.md
-`version`: `0.1.5`
-""")
-        self.write(".github/workflows/release.yml", "Exact VERSION to release (for example, 0.1.5)\n")
+        self.write("VERSION", "0.2.0\n")
+        status = """<!-- prepared-release:start -->
+Java 0.2.0 is prepared locally and not yet released. See RELEASE_CHECKLIST.md.
+<!-- prepared-release:end -->
+"""
+        self.write("RELEASE_CHECKLIST.md", """# Totipo Java 0.2.0 release checklist
+org.totipo:totipo-core:0.2.0
+org.totipo:totipo-storage-nio:0.2.0
+Annotated source tag convention: `v0.2.0`
+review/V0_2_0_RELEASE_NOTES.md
+`version`: `0.2.0`
+""" + status)
+        self.write(".github/workflows/release.yml", "Exact VERSION to release (for example, 0.2.0)\n")
         self.write("publishing/consumer-smoke/gradle.lockfile", "org.bouncycastle:bcprov-jdk18on:1.86=runtimeClasspath\n" + "".join(
-            f"org.totipo:totipo-{module}:0.1.5=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath\n"
+            f"org.totipo:totipo-{module}:0.2.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath\n"
             for module in ("core", "storage-nio")))
-        self.write("README.md", """Published dependency org.totipo:totipo-core:0.1.4
-`VERSION` is the single implementation version source and remains **0.1.5** for
-this local unreleased implementation. The current v1/r19 change intentionally
-simplifies pre-1.0 APIs and is breaking; the report recommends a separate minor
-release selection. The published 0.1.4 examples above are unchanged.
-""")
-        self.write("API_DESIGN.md", "VERSION remains 0.1.5 during this unreleased breaking simplification; release\nversion selection is separate.\n")
-        self.write("review/V0_1_5_RELEASE_NOTES.md", "## v0.1.5\nHistorical r18 notes\n")
+        self.write("README.md", "Published dependency org.totipo:totipo-core:0.1.4\n" + status)
+        self.write("API_DESIGN.md", status)
+        self.write("review/V0_2_0_RELEASE_NOTES.md", release.NOTES_TEMPLATE.format(version="0.2.0").replace("TODO:", "Reviewed:"))
         self.write("review/history.md", "0.1.4 / 0.1.5 / r18 / r19 provenance\n")
         output = contextlib.redirect_stdout(io.StringIO())
         output.__enter__()
@@ -70,54 +67,54 @@ release selection. The published 0.1.4 examples above are unchanged.
         return {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
 
     def finish_notes(self):
-        path = self.root / "review/V0_2_0_RELEASE_NOTES.md"
+        path = self.root / "review/V0_2_1_RELEASE_NOTES.md"
         path.write_text(path.read_text().replace("TODO:", "Reviewed:"))
 
     def test_valid_preparation_exact_paths_history_and_locks(self):
         before = self.files()
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         after = self.files()
         changed = {p for p in after if before.get(p) != after[p]}
         self.assertEqual(changed, {"VERSION", "RELEASE_CHECKLIST.md", ".github/workflows/release.yml",
-            "README.md", "API_DESIGN.md", "publishing/consumer-smoke/gradle.lockfile", "review/V0_2_0_RELEASE_NOTES.md"})
+            "README.md", "API_DESIGN.md", "publishing/consumer-smoke/gradle.lockfile", "review/V0_2_1_RELEASE_NOTES.md"})
         self.assertEqual(after["review/history.md"], before["review/history.md"])
-        self.assertEqual(after["review/V0_1_5_RELEASE_NOTES.md"], before["review/V0_1_5_RELEASE_NOTES.md"])
+        self.assertEqual(after["review/V0_2_0_RELEASE_NOTES.md"], before["review/V0_2_0_RELEASE_NOTES.md"])
         self.assertIn(b"totipo-core:0.1.4", after["README.md"])
-        self.assertEqual(after["publishing/consumer-smoke/gradle.lockfile"], before["publishing/consumer-smoke/gradle.lockfile"].replace(b":0.1.5=", b":0.2.0="))
-        self.assertTrue(release.reviewed_notes("0.2.0").startswith("## v0.2.0\n"))
+        self.assertEqual(after["publishing/consumer-smoke/gradle.lockfile"], before["publishing/consumer-smoke/gradle.lockfile"].replace(b":0.2.0=", b":0.2.1="))
+        self.assertTrue(release.reviewed_notes("0.2.1").startswith("## v0.2.1\n"))
         self.integrity.assert_called_once()
 
     def test_dry_run_writes_nothing(self):
         before = self.files()
-        release.prepare("0.2.0", dry_run=True)
+        release.prepare("0.2.1", dry_run=True)
         self.assertEqual(self.files(), before)
 
     def test_repeated_check_is_write_free_mutation_rejects_equal(self):
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         with self.assertRaisesRegex(RuntimeError, "still need review"):
-            release.prepare("0.2.0", check=True)
+            release.prepare("0.2.1", check=True)
         self.finish_notes()
         self.dirty = " M VERSION"
         before = self.files()
-        release.prepare("0.2.0", check=True)
-        release.prepare("0.2.0", check=True)
+        release.prepare("0.2.1", check=True)
+        release.prepare("0.2.1", check=True)
         self.assertEqual(self.files(), before)
         with self.assertRaisesRegex(RuntimeError, "newer"):
-            release.prepare("0.2.0")
+            release.prepare("0.2.1")
 
     def test_dirty_initial_tree_and_dry_run_rejected(self):
         self.dirty = "?? implementation.java"
         for dry in (False, True):
             with self.assertRaisesRegex(RuntimeError, "clean working tree"):
-                release.prepare("0.2.0", dry_run=dry)
+                release.prepare("0.2.1", dry_run=dry)
 
     def test_check_accepts_detached_reviewed_checkout_without_git_operations(self):
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         self.finish_notes()
         self.branch = ""
         before = self.files()
         with patch.object(release, "git", side_effect=AssertionError("Check must only validate files")):
-            with patch.object(sys, "argv", ["release.py", "prepare", "0.2.0", "--check"]):
+            with patch.object(sys, "argv", ["release.py", "prepare", "0.2.1", "--check"]):
                 release.main()
         self.assertEqual(self.files(), before)
 
@@ -126,100 +123,98 @@ release selection. The published 0.1.4 examples above are unchanged.
         before = self.files()
         for dry in (False, True):
             with self.assertRaisesRegex(RuntimeError, "requires main"):
-                release.prepare("0.2.0", dry_run=dry)
+                release.prepare("0.2.1", dry_run=dry)
         self.assertEqual(self.files(), before)
 
     def test_malformed_equal_and_downgrade_rejected(self):
-        for target in ("0.1.5", "0.1.4", "0.0.9", "0.02.0", "0.2", "0.2.0\n", "0.2.0-SNAPSHOT", "0.2.0-rc1", "$(id)"):
+        for target in ("0.2.0", "0.1.5", "0.1.4", "0.0.9", "0.02.0", "0.2", "0.2.1\n", "0.2.1-SNAPSHOT", "0.2.1-rc1", "$(id)"):
             with self.subTest(target=target), self.assertRaises(RuntimeError):
                 release.prepare(target)
 
     def test_unexpected_current_version_and_layout_rejected(self):
-        for value in ("0.1.5", "0.1.5\n\n", "0.1.6\n", "nonsense\n"):
+        for value in ("0.2.0", "0.2.0\n\n", "0.2.1\n", "nonsense\n"):
             self.write("VERSION", value)
             with self.subTest(value=value), self.assertRaises(RuntimeError):
-                release.prepare("0.2.0")
+                release.prepare("0.2.1")
 
     def test_wrong_branch_and_integrity_rejected(self):
         self.branch = "feature"
         with self.assertRaisesRegex(RuntimeError, "main"):
-            release.prepare("0.2.0")
+            release.prepare("0.2.1")
         self.branch = "main"
         self.integrity.side_effect = RuntimeError("Exact reviewed r19 spec pin changed")
         with self.assertRaisesRegex(RuntimeError, "pin changed"):
-            release.prepare("0.2.0")
+            release.prepare("0.2.1")
 
     def test_missing_metadata_and_ambiguous_occurrences_fail_before_writes(self):
         for path, extra in (("API_DESIGN.md", "unexpected layout"),
-                            (".github/workflows/release.yml", "Exact VERSION to release (for example, 0.1.5)"),
+                            (".github/workflows/release.yml", "Exact VERSION to release (for example, 0.2.0)"),
                             ("README.md", "<!-- prepared-release:start -->"),
-                            ("RELEASE_CHECKLIST.md", "org.totipo:totipo-core:0.1.5")):
+                            ("RELEASE_CHECKLIST.md", "org.totipo:totipo-core:0.2.0")):
             before = self.files()
             file = self.root / path
             file.write_text(extra if path == "API_DESIGN.md" else file.read_text() + extra)
             modified = self.files()
             with self.subTest(path=path), self.assertRaises(RuntimeError):
-                release.prepare("0.2.0")
+                release.prepare("0.2.1")
             self.assertEqual(self.files(), modified)
             file.write_bytes(before[path])
 
     def test_notes_exact_selection_heading_and_template_contract(self):
-        self.write("review/V0_2_0_RELEASE_NOTES.md", "## v0.1.5\n")
+        self.write("review/V0_2_1_RELEASE_NOTES.md", "## v0.1.5\n")
         with self.assertRaisesRegex(RuntimeError, "requested version"):
-            release.prepare("0.2.0")
-        self.write("review/V0_2_0_RELEASE_NOTES.md", "## v0.2.0\n")
+            release.prepare("0.2.1")
+        self.write("review/V0_2_1_RELEASE_NOTES.md", "## v0.2.1\n")
         with self.assertRaisesRegex(RuntimeError, "section contract"):
-            release.prepare("0.2.0")
-        (self.root / "review/V0_2_0_RELEASE_NOTES.md").unlink()
+            release.prepare("0.2.1")
+        (self.root / "review/V0_2_1_RELEASE_NOTES.md").unlink()
         with patch.object(release, "NOTES_TEMPLATE", "## v{version}\n"), self.assertRaisesRegex(RuntimeError, "template contract"):
-            release.prepare("0.2.0")
+            release.prepare("0.2.1")
 
     def test_future_release_reuses_markers(self):
-        release.prepare("0.2.0")
         release.prepare("0.2.1")
-        self.assertEqual((self.root / "VERSION").read_text(), "0.2.1\n")
-        self.assertIn("Java 0.2.1 is prepared", (self.root / "README.md").read_text())
+        release.prepare("0.2.2")
+        self.assertEqual((self.root / "VERSION").read_text(), "0.2.2\n")
+        self.assertIn("Java 0.2.2 is prepared", (self.root / "README.md").read_text())
 
     def test_released_status_check_is_write_free_and_future_prepare_is_preserved(self):
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         self.finish_notes()
         for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
             path = self.root / name
             path.write_text(path.read_text().replace(
-                "Java 0.2.0 is prepared locally and not yet released.",
-                "Java 0.2.0 is released."))
+                "Java 0.2.1 is prepared locally and not yet released.",
+                "Java 0.2.1 is released."))
         before = self.files()
-        release.prepare("0.2.0", check=True)
+        release.prepare("0.2.1", check=True)
         self.assertEqual(self.files(), before)
-        release.prepare("0.2.1")
+        release.prepare("0.2.2")
         for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
-            self.assertIn("Java 0.2.1 is prepared locally and not yet released.",
+            self.assertIn("Java 0.2.2 is prepared locally and not yet released.",
                           (self.root / name).read_text())
 
     def test_duplicate_released_status_fails_before_writes(self):
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         path = self.root / "README.md"
-        text = path.read_text().replace("Java 0.2.0 is prepared locally and not yet released.",
-                                        "Java 0.2.0 is released.")
+        text = path.read_text().replace("Java 0.2.1 is prepared locally and not yet released.",
+                                        "Java 0.2.1 is released.")
         path.write_text(text + text)
         before = self.files()
         with self.assertRaisesRegex(RuntimeError, "ambiguous"):
-            release.prepare("0.2.1")
+            release.prepare("0.2.2")
         self.assertEqual(self.files(), before)
 
     def test_check_rejects_inconsistent_lock(self):
-        release.prepare("0.2.0")
+        release.prepare("0.2.1")
         self.finish_notes()
         lock = self.root / "publishing/consumer-smoke/gradle.lockfile"
-        lock.write_text(lock.read_text().replace("totipo-core:0.2.0", "totipo-core:0.1.5"))
+        lock.write_text(lock.read_text().replace("totipo-core:0.2.1", "totipo-core:0.1.5"))
         with self.assertRaises(RuntimeError):
-            release.prepare("0.2.0", check=True)
+            release.prepare("0.2.1", check=True)
 
     def released_source_fixture(self):
         # Root Markdown is excluded from Nix qualification. Build a deterministic
         # released fixture and embed the actual API_DESIGN scheduling paragraph.
-        release.prepare("0.2.0")
-        self.finish_notes()
         for name in ("README.md", "API_DESIGN.md", "RELEASE_CHECKLIST.md"):
             path = self.root / name
             path.write_text(path.read_text().replace(
@@ -309,7 +304,7 @@ remain authoritative for their specific rules.
 
     def test_cli_routes_only_preparation_and_rejects_unrelated_options(self):
         before = self.files()
-        with patch.object(sys, "argv", ["release.py", "prepare", "0.2.0", "--dry-run"]):
+        with patch.object(sys, "argv", ["release.py", "prepare", "0.2.1", "--dry-run"]):
             release.main()
         self.assertEqual(self.files(), before)
         for argv in (["release.py", "prepare"], ["release.py", "tests", "--check"]):

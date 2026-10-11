@@ -325,30 +325,28 @@ def owned_version(text, template, current, target, path):
     return replace_once(text, template.format(version=current), template.format(version=target), path)
 
 
-def status_block(text, old, new, legacy, path):
+def status_block(text, old, new, path):
     start, end = "<!-- prepared-release:start -->", "<!-- prepared-release:end -->"
     before = f"{start}\nJava {old} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
     released = f"{start}\nJava {old} is released. See RELEASE_CHECKLIST.md.\n{end}"
     after = f"{start}\nJava {new} is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n{end}"
-    if start in text or end in text:
-        require(text.count(start) == text.count(end) == 1,
-                f"Unexpected or ambiguous release metadata markers in {path}")
-        # Current docs may record a completed release. Keep --check write-free;
-        # a newer preparation still produces the same prepared-status contract.
-        if released in text:
-            before = released
-            if old == new:
-                after = released
-        return replace_once(text, before, after, path)
-    require(old == "0.1.5", f"Missing release metadata marker in {path}")
-    return replace_once(text, legacy, after, path)
+    require(start in text and end in text, f"Missing release metadata marker in {path}")
+    require(text.count(start) == text.count(end) == 1,
+            f"Unexpected or ambiguous release metadata markers in {path}")
+    # Current docs may record a completed release. Keep --check write-free;
+    # a newer preparation still produces the same prepared-status contract.
+    if released in text:
+        before = released
+        if old == new:
+            after = released
+    return replace_once(text, before, after, path)
 
 
 def preparation_plan(current, target):
     """Edit only declared metadata slots; explanatory/history prose is not owned.
 
-    README/API_DESIGN ownership is limited to the prepared-release block (or the
-    exact legacy paragraph). Version mentions elsewhere may remain historical
+    README/API_DESIGN ownership is limited to the prepared-release block.
+    Version mentions elsewhere may remain historical
     across releases. Validate every owned layout before the caller writes.
     """
     require((ROOT / "VERSION").read_text() == current + "\n", "VERSION differs from current version")
@@ -365,8 +363,7 @@ def preparation_plan(current, target):
         text = owned_version(text, template, current, target, path)
     text = owned_version(text, "review/V{version}_RELEASE_NOTES.md",
                          current.replace(".", "_"), target.replace(".", "_"), path)
-    text = status_block(text, current, target,
-        "VERSION remains 0.1.5 during the unreleased v1/r19 breaking simplification. Choose\nand review a new release version and matching notes before using this checklist.", path)
+    text = status_block(text, current, target, path)
     changes[path] = text
     path = ".github/workflows/release.yml"
     text = (ROOT / path).read_text()
@@ -380,12 +377,9 @@ def preparation_plan(current, target):
         text = owned_version(text, f"org.totipo:totipo-{module}:" + "{version}=",
                              current, target, path)
     changes[path] = text
-    for path, legacy in {
-        "README.md": "`VERSION` is the single implementation version source and remains **0.1.5** for\nthis local unreleased implementation. The current v1/r19 change intentionally\nsimplifies pre-1.0 APIs and is breaking; the report recommends a separate minor\nrelease selection. The published 0.1.4 examples above are unchanged.",
-        "API_DESIGN.md": "VERSION remains 0.1.5 during this unreleased breaking simplification; release\nversion selection is separate.",
-    }.items():
+    for path in ("README.md", "API_DESIGN.md"):
         text = (ROOT / path).read_text()
-        changes[path] = status_block(text, current, target, legacy, path)
+        changes[path] = status_block(text, current, target, path)
     return changes
 
 

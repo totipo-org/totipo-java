@@ -117,6 +117,25 @@ existing development shell (`nix develop` or `direnv allow`) or on the host:
 ./gradlew javadoc
 ```
 
+Wrapper maintenance uses the pinned `wrapper` task in `build.gradle.kts`:
+run `./gradlew wrapper` twice to regenerate with the selected distribution, then
+verify its identity with
+`python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties`.
+For an intentional Gradle update, review the distribution version/checksum and
+wrapper JAR identity in the build, wrapper verifier and release workflow together.
+
+For intentional library dependency updates, use the existing maintenance command:
+
+```sh
+./gradlew :core:dependencies :storage-nio:dependencies --write-locks --write-verification-metadata sha256
+```
+
+Review every lock and checksum change against canonical artifacts before trusting
+the generated metadata. Keep strict verification enabled. Dependency-input changes
+then require the separate human fixed-cache regeneration and exhaustive review
+checkpoint above, followed by qualification in the order specified in AGENTS.md.
+These maintenance operations are separate from routine development and qualification.
+
 Record milestone classification before choosing validation. Follow the durable
 [qualification ladder](AGENTS.md#milestone-qualification-ladder): one ordinary
 `./gradlew test` baseline, focused module/API tests during iteration, then once
