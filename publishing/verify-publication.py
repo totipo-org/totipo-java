@@ -6,6 +6,8 @@ import struct
 import xml.etree.ElementTree as ET
 import zipfile
 
+import publication
+
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text().removesuffix("\n")
 REPO = ROOT / "build/repository"
@@ -26,13 +28,13 @@ def entries(path):
         return files
 
 
-hashes = {}
+(ROOT / publication.MANIFEST).unlink(missing_ok=True)
 expected_repo = set()
 for module, title in [("core", "Totipo Java Core"), ("storage-nio", "Totipo Java NIO Storage")]:
     artifact = f"totipo-{module}"
     directory = REPO / "org/totipo" / artifact / VERSION
     prefix = f"{artifact}-{VERSION}"
-    expected = {f"{prefix}{suffix}" for suffix in [".jar", "-sources.jar", "-javadoc.jar", ".pom", ".module"]}
+    expected = {Path(a["path"]).name for a in publication.expected_artifacts(VERSION) if a["module"] == module}
     actual = {p.name for p in directory.iterdir()}
     require(expected <= actual, f"Missing files: {expected - actual}")
     for name in actual - expected:
@@ -108,13 +110,11 @@ for module, title in [("core", "Totipo Java Core"), ("storage-nio", "Totipo Java
     generated_docs = {str(p.relative_to(docs_root)): p.read_bytes() for p in docs_root.rglob("*") if p.is_file()}
     require("index.html" in docs and set(docs) == set(generated_docs) | {"META-INF/MANIFEST.MF"}, "Wrong Javadoc contents")
     require(all(docs[n] == data for n, data in generated_docs.items()), "Wrong Javadoc bytes")
-    for name in sorted(expected):
-        path = directory / name
-        hashes[str(path.relative_to(REPO))] = hashlib.sha256(path.read_bytes()).hexdigest()
     print(f"{artifact}: POM {dependencies}; metadata, contents, Java 17 and unsigned file inventory OK")
 require({p.relative_to(REPO) for p in REPO.rglob("*") if p.is_file()} == expected_repo, "Unexpected repository artifacts")
-(ROOT / "build/publication-sha256.json").write_text(json.dumps(hashes, indent=2, sort_keys=True) + "\n")
-print(json.dumps(hashes, indent=2, sort_keys=True))
+manifest = publication.accept(REPO, VERSION)
+(ROOT / publication.MANIFEST).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+print(json.dumps(publication.hashes(manifest), indent=2, sort_keys=True))
 
 # Staged bytes are outputs of this checkout, so their expected hashes are generated
 # after structural/content validation, not pinned to one JDK vendor's compilation.
@@ -122,12 +122,9 @@ print(json.dumps(hashes, indent=2, sort_keys=True))
 smoke = ROOT / "publishing/consumer-smoke"
 template = (smoke / "verification-metadata-template.xml").read_text()
 components = []
-for artifact in ["totipo-core", "totipo-storage-nio"]:
-    artifacts = []
-    for suffix in [".jar", ".pom", ".module"]:
-        name = f"{artifact}-{VERSION}{suffix}"
-        digest = hashes[f"org/totipo/{artifact}/{VERSION}/{name}"]
-        artifacts.append(f'         <artifact name="{name}"><sha256 value="{digest}" origin="Verified local staging output"/></artifact>')
-    components.append(f'      <component group="org.totipo" name="{artifact}" version="{VERSION}">\n' + "\n".join(artifacts) + '\n      </component>')
+for module in publication.MODULES:
+    selected = [a for a in manifest["artifacts"] if a["module"] == module and a["role"] in {"binary", "pom", "module"}]
+    artifacts = [f'         <artifact name="{Path(a["path"]).name}"><sha256 value="{a["sha256"]}" origin="Verified local staging output"/></artifact>' for a in selected]
+    components.append(f'      <component group="org.totipo" name="{selected[0]["artifact"]}" version="{VERSION}">\n' + "\n".join(artifacts) + '\n      </component>')
 (smoke / "gradle").mkdir(exist_ok=True)
 (smoke / "gradle/verification-metadata.xml").write_text(template.replace("   </components>", "\n".join(components) + "\n   </components>"))

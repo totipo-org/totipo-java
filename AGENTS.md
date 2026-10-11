@@ -82,10 +82,12 @@ build changes affecting that boundary, run once when stable:
 ./gradlew test build javadoc verifyPublication consumerSmoke
 python3 -B publishing/release.py tests
 python3 -B -m unittest discover -s publishing -p 'test_*.py'
-python3 -B publishing/verify-publication.py
+python3 -B publishing/publication.py check
 ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
 
+The manifest check rereads staged bytes and proves the repository is unchanged
+since `verifyPublication` accepted it; it does not repeat semantic verification.
 The POM-only consumer remains an independent current gate; `consumerSmoke`
 exercises module metadata. Run full accounting immediately after the full Java
 suite, before any focused module tests. Preserve its evidence. The authoritative

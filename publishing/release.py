@@ -13,6 +13,8 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+import publication
+
 ROOT = Path(__file__).resolve().parents[1]
 CENTRAL = "https://repo.maven.apache.org/maven2/"
 SPEC_COMMIT = "cdb4e91be1c6d3704874b2b92457ffe7be5e9084"
@@ -142,30 +144,32 @@ def central_state():
     return "publish"
 
 
-def inventory():
-    data = json.loads((ROOT / "build/publication-sha256.json").read_text())
+def accepted_manifest():
     version, _ = inputs()
-    require(len(data) == 10, "Expected 10 verified unsigned release artifacts")
-    for path, digest in data.items():
-        require(re.fullmatch(r"org/totipo/(totipo-(?:core|storage-nio))/" + re.escape(version) + r"/\1-" + re.escape(version) + r"(?:-sources\.jar|-javadoc\.jar|\.jar|\.pom|\.module)", path), "Invalid inventory path")
-        require(re.fullmatch(r"[0-9a-f]{64}", digest), "Invalid inventory SHA-256")
-    return data
+    manifest = publication.load(ROOT, version)
+    publication.check_staging(manifest, ROOT / "build/repository")
+    return manifest
+
+
+def inventory():
+    return publication.hashes(accepted_manifest())
 
 
 def compare_inventory():
     current = inventory()
-    require(current == json.loads(os.environ["EXPECTED_INVENTORY"]), "Fresh artifact inventory differs from preflight")
+    version, _ = inputs()
+    expected = publication.hashes(publication.parse(os.environ["EXPECTED_INVENTORY"], version))
+    require(current == expected, "Fresh artifact inventory differs from preflight")
     print("10/10 rebuilt artifact hashes match preflight")
 
 
 def signed():
     """Locate the sign task's unsigned inputs and detached signatures, not staging copies."""
-    expected = inventory()
-    for path, digest in expected.items():
-        module = "storage-nio" if "/totipo-storage-nio/" in path else "core"
-        name = Path(path).name
-        actual = {".pom": "pom-default.xml", ".module": "module.json"}.get(Path(name).suffix, name)
-        directory = ROOT / module / "build"
+    for artifact in accepted_manifest()["artifacts"]:
+        name = Path(artifact["path"]).name
+        digest = artifact["sha256"]
+        actual = {"pom": "pom-default.xml", "module": "module.json"}.get(artifact["role"], name)
+        directory = ROOT / artifact["module"] / "build"
         candidates = list(directory.rglob(actual + ".asc"))
         require(len(candidates) == 1, f"Expected exactly one signing output for {name}")
         signature = candidates[0].read_bytes()
@@ -446,7 +450,7 @@ def main():
             output.write(f"mode={state}\n")
     elif args.command == "inventory":
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-            output.write("inventory=" + json.dumps(inventory(), separators=(",", ":"), sort_keys=True) + "\n")
+            output.write("inventory=" + json.dumps(accepted_manifest(), separators=(",", ":"), sort_keys=True) + "\n")
     else:
         {"inputs": inputs, "identity": identity, "compare": compare_inventory, "signed": signed,
          "remote": verify_remote, "tests": test_results, "focused-tests": lambda: test_results(True),

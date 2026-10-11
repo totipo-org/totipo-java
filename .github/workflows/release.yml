@@ -71,17 +71,17 @@ jobs:
           java-version: "25"
       - name: Verify Gradle wrapper JAR
         run: |
-          echo '238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
       - name: Check release guardrail failure paths
         run: python3 -B -m unittest discover -s publishing -p 'test_*.py'
       - name: Full normal and forced offline release gates
         run: |
           ./gradlew clean test build verifyPublication consumerSmoke
           python3 publishing/release.py tests
-          cp build/publication-sha256.json "$RUNNER_TEMP/normal-publication-sha256.json"
+          cp build/publication-manifest.json "$RUNNER_TEMP/normal-publication-manifest.json"
           ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks clean test build verifyPublication consumerSmoke
           python3 publishing/release.py tests
-          export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-publication-sha256.json")"
+          export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-publication-manifest.json")"
           python3 publishing/release.py compare
           ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
       - name: Focused spec and profile integrity
@@ -141,7 +141,7 @@ jobs:
           java-version: "25"
       - name: Verify Gradle wrapper JAR
         run: |
-          echo '238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
       - name: Rebuild and compare unsigned artifacts
         run: |
           ./gradlew --no-daemon --no-build-cache clean verifyPublication
@@ -201,7 +201,7 @@ jobs:
           java-version: "25"
       - name: Verify Gradle wrapper JAR
         run: |
-          echo '238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5  gradle/wrapper/gradle-wrapper.jar' | sha256sum -c -
+          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
       - name: Fresh unsigned staging and exact remote verification
         run: |
           ./gradlew --no-daemon --no-build-cache clean verifyPublication

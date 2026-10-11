@@ -65,7 +65,7 @@ stdenv.mkDerivation (finalAttrs: {
     python3 -B publishing/release.py tests | tee test-summary.txt
     python3 -B -m unittest discover -s publishing -p 'test_*.py'
     echo 'Python release guardrail unit tests passed' >> test-summary.txt
-    python3 -B publishing/verify-publication.py
+    python3 -B publishing/publication.py check
     gradle -p publishing/consumer-smoke -PpomOnly clean check
     echo 'Independent module-metadata and POM-only consumers passed' >> test-summary.txt
     # Account for the full suite above before focused tests replace core XML.
@@ -79,17 +79,8 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
     mkdir -p "$out/publication"
     # Copy only the verifier's ten unsigned artifacts, excluding timestamped indexes.
-    python3 - "$out" <<'PY'
-    import json, shutil, sys
-    from pathlib import Path
-    out = Path(sys.argv[1])
-    inventory = json.loads(Path('build/publication-sha256.json').read_text())
-    for name in sorted(inventory):
-        target = out / 'publication' / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(Path('build/repository') / name, target)
-    PY
-    cp build/publication-sha256.json "$out/publication-sha256.json"
+    python3 -B publishing/publication.py copy "$out/publication"
+    cp build/publication-manifest.json "$out/publication-manifest.json"
     cp test-summary.txt "$out/test-summary.txt"
     cat core/gradle.lockfile storage-nio/gradle.lockfile \
       settings-gradle.lockfile publishing/consumer-smoke/gradle.lockfile > "$out/dependency-summary.txt"

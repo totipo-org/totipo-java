@@ -208,11 +208,11 @@ POM-only consumers and focused integrity independently.
 ./gradlew clean test build verifyPublication consumerSmoke
 python3 -B publishing/release.py tests
 # Use a directory outside build outputs; preserve the exact normal inventory.
-cp build/publication-sha256.json /tmp/totipo-normal-publication-sha256.json
+cp build/publication-manifest.json /tmp/totipo-normal-publication-manifest.json
 ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks \
   clean test build verifyPublication consumerSmoke
 python3 -B publishing/release.py tests
-EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-sha256.json)" \
+EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-manifest.json)" \
   REQUESTED_VERSION="$(cat VERSION)" REQUESTED_COMMIT="$(git rev-parse HEAD)" \
   DISPATCH_REF=refs/heads/main DISPATCH_SHA="$(git rev-parse HEAD)" \
   python3 -B publishing/release.py compare
@@ -228,7 +228,7 @@ git status --short
 - [ ] Java 17 production classfile checks, Javadocs, strict dependency verification
   and locks, publication structure/content/scopes, and both consumer modes pass.
 - [ ] Exactly 10 unsigned artifacts (six JARs, two POMs, two `.module` files) in
-  `build/publication-sha256.json` have equal hashes across normal and forced offline
+  `build/publication-manifest.json` have equal artifact hashes across normal and forced offline
   builds. Repository-index timestamps and signatures are excluded. The inventory
   is passed between jobs as a small immutable preflight output; each later job
   independently rebuilds and compares it. This is exact-byte verification, not
@@ -237,7 +237,18 @@ git status --short
   outcomes are unchanged by release machinery.
 
 `verifyPublication` remains the single artifact inventory/structural verifier.
-It generates the independent consumer's ignored verification metadata only after
+It emits schema-1 `build/publication-manifest.json`: version, ten artifact records
+(module, group, artifact, version, role, suffix, repository-relative path, SHA-256),
+and a whole-staging fingerprint covering indexes/sidecars too. `publication.py`
+owns expected identities and strict parsing; candidate files never define names.
+Release comparisons compare the ten artifact hashes, excluding the staging
+fingerprint because repository indexes contain timestamps. Each staging read
+checks the fingerprint locally. Signing and hosted-byte checks still read their
+own inputs independently. Nix copies through this model and checks destination
+bytes; workflows only transport the accepted manifest.
+After acceptance, `python3 -B publishing/publication.py check` proves staging is
+unchanged without repeating the semantic verifier.
+The semantic verifier generates the independent consumer's ignored verification metadata only after
 checking staged bytes. External BC hashes remain pinned in its committed template.
 The default consumer remains an exclusive local-staging Totipo repository plus
 Central for BC; no Maven-local/composite/source fallback exists.

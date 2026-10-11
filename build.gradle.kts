@@ -1,3 +1,4 @@
+import java.io.DataInputStream
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.javadoc.Javadoc
 import org.gradle.api.tasks.wrapper.Wrapper
@@ -89,6 +90,30 @@ subprojects {
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
     }
+
+    // Inspect every production class, so an accidental target increase fails `check`.
+    val moduleName = project.name
+    val mainClasses = extensions.getByType<JavaPluginExtension>().sourceSets.named("main").map { it.output.classesDirs }
+    val verifyJava17Bytecode = tasks.register("verifyJava17Bytecode") {
+        group = "verification"
+        description = "Verify all ${moduleName} production classes use Java 17 bytecode"
+        dependsOn("compileJava")
+        inputs.files(mainClasses)
+        doLast {
+            val classes = inputs.files.asFileTree.matching { include("**/*.class") }.files
+            check(classes.isNotEmpty()) { "No ${moduleName} classes to verify" }
+            classes.forEach { file ->
+                DataInputStream(file.inputStream()).use { input ->
+                    check(input.readInt() == 0xCAFEBABE.toInt()) { "Invalid class: $file" }
+                    check(input.readUnsignedShort() == 0) { "Preview bytecode: $file" }
+                    check(input.readUnsignedShort() == 61) { "Not Java 17 bytecode: $file" }
+                }
+            }
+        }
+    }
+    tasks.named("check") { dependsOn(verifyJava17Bytecode) }
+    tasks.named("test") { dependsOn(verifyJava17Bytecode) }
+
     dependencyLocking {
         lockAllConfigurations()
         lockMode.set(LockMode.STRICT)
