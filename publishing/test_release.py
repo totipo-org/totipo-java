@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -219,6 +220,64 @@ class ReleaseTests(unittest.TestCase):
                 self.assertNotIn("fake-token", " ".join(push.args))
                 self.assertEqual(create.call_args.args[0][:4], ["gh", "release", "create", "v0.1.3"])
                 self.assertIn("--verify-tag", create.call_args.args[0])
+
+
+class WorkflowPinTests(unittest.TestCase):
+    # Exact upstream action.yml reviewed at these SHAs; no network in the guard.
+    # A pin change requires re-reviewing the release AND its runtime metadata.
+    APPROVED = {
+        "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1", "node24"),
+        "actions/setup-java": ("de7274f081f381c8f8158605e0321c36c376e2e6", "v6.0.1", "node24"),
+        "cachix/install-nix-action": ("13d8dd58da0234aa297dedd986986ccb8e7f3e24", "v31.11.1", "composite"),
+    }
+
+    def reviewed_uses(self, text):
+        found = []
+        for line in text.splitlines():
+            # Fail closed on alternative YAML spellings; this checks the repo's
+            # canonical block style, rather than implementing a YAML parser.
+            if not re.search(r"\buses\s*['\"]?\s*:", line) or line.lstrip().startswith("#"):
+                continue
+            match = re.fullmatch(
+                r"\s*(?:-\s*)?uses: ([\w-]+/[\w-]+)@([0-9a-f]{40}) # (v\d+\.\d+\.\d+)\s*", line)
+            self.assertIsNotNone(match, f"Noncanonical/unpinned action: {line}")
+            repo, sha, version = match.groups()
+            self.assertIn(repo, self.APPROVED, f"Unreviewed action repository: {repo}")
+            expected_sha, expected_version, runtime = self.APPROVED[repo]
+            self.assertEqual((sha, version), (expected_sha, expected_version))
+            self.assertIn(runtime, {"node24", "composite"})
+            found.append(repo)
+        return found
+
+    def test_all_workflow_pins(self):
+        workflows = Path(__file__).resolve().parents[1] / ".github/workflows"
+        if not workflows.exists():
+            # qualification.nix intentionally excludes .github. CI runs this
+            # guard on the full checkout before Nix; release preflight does too.
+            self.skipTest("Workflow YAML excluded from Nix source projection; checked on full checkout")
+        paths = sorted([*workflows.glob("*.yml"), *workflows.glob("*.yaml")])
+        self.assertTrue(paths, "No workflow files found")
+        found = []
+        for path in paths:
+            with self.subTest(workflow=path.name):
+                found.extend(self.reviewed_uses(path.read_text()))
+        self.assertEqual(set(found), set(self.APPROVED))
+
+    def test_reject_unreviewed_workflow_actions(self):
+        sha, version, _ = self.APPROVED["actions/checkout"]
+        for entry in (
+            "uses: actions/checkout@v7",
+            f"uses: actions/checkout@{'a' * 40} # {version}",
+            f"uses: actions/checkout@{sha} # v7.0.0",
+            f"uses: other/action@{sha} # {version}",
+            f"uses: actions/checkout/subaction@{sha} # {version}",
+            "uses: docker://unreviewed/image:latest",
+            "uses: ./unreviewed-local-action",
+            f"'uses': actions/checkout@{sha} # {version}",
+            '{uses: "actions/checkout@v7"}',
+        ):
+            with self.subTest(entry=entry), self.assertRaises(AssertionError):
+                self.reviewed_uses(entry)
 
 
 if __name__ == "__main__":
