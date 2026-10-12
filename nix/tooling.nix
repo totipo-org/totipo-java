@@ -39,7 +39,7 @@ let
   };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
-    version = "j1";
+    version = "j2b";
     src = source;
     dontConfigure = true;
     buildPhase = ''
@@ -60,11 +60,13 @@ let
         -proc:none -sourcepath src/test/java -classpath "classes:${jackson}" \
         -d test-classes @test-sources
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.StrictJsonTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.publication.PublicationTest
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.
       cat > Forbidden.java <<'JAVA'
       import org.totipo.RevisionId;
-      final class Forbidden { RevisionId value; }
+      import org.gradle.api.Project;
+      final class Forbidden { RevisionId value; Project project; }
       JAVA
       if ${jdk}/bin/javac -proc:none -sourcepath empty-source \
         -classpath "classes:${jackson}" -d test-classes Forbidden.java 2> forbidden.log; then
@@ -72,6 +74,7 @@ let
         exit 1
       fi
       grep -F 'package org.totipo does not exist' forbidden.log
+      grep -F 'package org.gradle.api does not exist' forbidden.log
       runHook postCheck
     '';
     installPhase = ''

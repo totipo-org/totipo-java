@@ -3,11 +3,20 @@ package org.totipo.tooling;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-/** Bootstrap only; no publication or release operations. */
+/** Independent tooling; Python retains live publication and release authority. */
 public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws IOException {
+        if (args.length > 0 && args[0].equals("publication")) {
+            try {
+                org.totipo.tooling.publication.PublicationCli.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            } catch (IOException | RuntimeException e) {
+                System.err.println("Publication operation failed: " + e.getMessage());
+                System.exit(1);
+            }
+            return;
+        }
         if (args.length != 1 || !args[0].equals("smoke")) {
             System.err.println("Usage: totipo-java-tool smoke");
             System.exit(2);

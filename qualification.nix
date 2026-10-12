@@ -1,4 +1,4 @@
-{ lib, stdenv, jdk, gradle, python3 }:
+{ lib, stdenv, jdk, gradle, python3, publicationTool }:
 let
   version = lib.removeSuffix "\n" (builtins.readFile ./VERSION);
   cache = builtins.fromJSON (builtins.readFile ./package-deps.json);
@@ -66,6 +66,16 @@ stdenv.mkDerivation (finalAttrs: {
     python3 -B -m unittest discover -s publishing -p 'test_*.py'
     echo 'Python release guardrail unit tests passed' >> test-summary.txt
     python3 -B publishing/publication.py check
+    # Independent prebuilt Java verifier: same staged bytes, no producer rebuild.
+    # Python retains acceptance authority; Java evidence stays outside the checkout.
+    shadowEvidence=$(mktemp -d)
+    ${publicationTool}/bin/totipo-java-tool publication verify "$PWD" "$PWD/build/repository" \
+      "$shadowEvidence/manifest.json" "$shadowEvidence/consumer.xml"
+    cmp build/publication-manifest.json "$shadowEvidence/manifest.json"
+    cmp publishing/consumer-smoke/gradle/verification-metadata.xml "$shadowEvidence/consumer.xml"
+    ${publicationTool}/bin/totipo-java-tool publication check "$PWD" "$PWD/build/repository" \
+      "$shadowEvidence/manifest.json"
+    echo 'Independent Java/Python publication evidence byte parity passed' >> test-summary.txt
     gradle -p publishing/consumer-smoke -PpomOnly clean check
     echo 'Independent module-metadata and POM-only consumers passed' >> test-summary.txt
     # Account for the full suite above before focused tests replace core XML.

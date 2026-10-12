@@ -19,6 +19,7 @@
         };
         tooling = pkgs.callPackage ./nix/tooling.nix { };
         javaQualification = pkgs.callPackage ./qualification.nix {
+          publicationTool = tooling.launcher;
           jdk = pkgs.jdk25_headless;
           gradle = pkgs.gradle_9.override { java = pkgs.jdk25_headless; };
         };
