@@ -31,7 +31,8 @@ stdenvNoCC.mkDerivation {
     runHook preCheck
     ${jdk}/bin/java -cp test-classes:classes org.totipo.tooling.wrapper.WrapperVerifierTest \
       ${../gradle/wrapper/gradle-wrapper.jar} \
-      ${../gradle/wrapper/gradle-wrapper.properties}
+      ${../gradle/wrapper/gradle-wrapper.properties} \
+      ${./verify-wrapper.py}
     ${jdk}/bin/java -cp classes org.totipo.tooling.wrapper.WrapperVerifier \
       ${../gradle/wrapper/gradle-wrapper.jar} \
       ${../gradle/wrapper/gradle-wrapper.properties}

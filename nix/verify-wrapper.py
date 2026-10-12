@@ -12,11 +12,15 @@ expected = {
     "distributionUrl": r"https\://services.gradle.org/distributions/gradle-9.8.0-bin.zip",
     "distributionSha256Sum": "bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c",
 }
-lines = properties.read_text().splitlines()
+expected_properties = "e81b90975868be2513ca00d6a5a01303a406a5cb01a306210b887e983e4b17ae"
+properties_bytes = properties.read_bytes()
+if hashlib.sha256(properties_bytes).hexdigest() != expected_properties:
+    raise SystemExit("Gradle wrapper properties SHA-256 mismatch")
+lines = properties_bytes.decode("utf-8").splitlines()
 if any(line.rstrip().endswith("\\") for line in lines if not line.lstrip().startswith(("#", "!"))):
     raise SystemExit("Unexpected continued Gradle wrapper property")
 for key, value in expected.items():
     entries = [line for line in lines if re.match(rf"\s*{re.escape(key)}(?:\s|=|:|$)", line)]
     if entries != [f"{key}={value}"]:
         raise SystemExit(f"Gradle wrapper {key} mismatch or duplicate")
-print("Gradle wrapper JAR, distribution URL and distribution SHA-256 verified")
+print("Gradle wrapper JAR, complete properties file and distribution declarations verified")

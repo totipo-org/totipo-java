@@ -1,6 +1,8 @@
 package org.totipo.tooling.wrapper;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -12,6 +14,8 @@ import java.util.HexFormat;
 public final class WrapperVerifier {
     private static final String JAR_SHA256 =
             "238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5";
+    private static final String PROPERTIES_SHA256 =
+            "e81b90975868be2513ca00d6a5a01303a406a5cb01a306210b887e983e4b17ae";
     private static final String URL =
             "https\\://services.gradle.org/distributions/gradle-9.8.0-bin.zip";
     private static final String DISTRIBUTION_SHA256 =
@@ -27,7 +31,7 @@ public final class WrapperVerifier {
         }
         try {
             verify(Path.of(args[0]), Path.of(args[1]));
-            System.out.println("Gradle wrapper JAR, distribution URL and distribution SHA-256 verified");
+            System.out.println("Gradle wrapper JAR, complete properties file and distribution declarations verified");
         } catch (IOException | InvalidPathException | SecurityException failure) {
             System.err.println("Wrapper verification failed: " + failure);
             System.exit(1);
@@ -51,8 +55,17 @@ public final class WrapperVerifier {
         if (!HexFormat.of().formatHex(digest.digest()).equals(JAR_SHA256)) {
             throw new IOException("Gradle wrapper JAR SHA-256 mismatch: " + jar);
         }
-        // Strict UTF-8 decoding, as in Python's read_text() in the qualification environment.
-        String text = Files.readString(properties);
+        // Hash and decode one byte snapshot; never parse a second read of the file.
+        byte[] bytes = Files.readAllBytes(properties);
+        if (!HexFormat.of().formatHex(digest.digest(bytes)).equals(PROPERTIES_SHA256)) {
+            throw new IOException("Gradle wrapper properties SHA-256 mismatch: " + properties);
+        }
+        String text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
+        validateDeclarations(text, properties);
+    }
+
+    // Kept independently testable as defense in depth; verify() always authenticates first.
+    static void validateDeclarations(String text, Path properties) throws IOException {
         int urls = 0;
         int checksums = 0;
         int start = 0;
