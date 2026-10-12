@@ -78,8 +78,18 @@ and locks. No native access/FFM or Android dependency is required.
 The final routine hermetic repository gate on **x86_64-linux** is exactly:
 
 ```sh
-nix flake check path:.
+nix flake check
 ```
+
+Local pre-commit qualification consumes the Git-aware working tree, including
+unstaged modifications to tracked files. For each intended new milestone file,
+including its review report, agents may use `git add --intent-to-add <file>` to
+establish source membership without staging contents. Require
+`git diff --cached --quiet` to pass; actual content staging needs explicit user
+authorization. Keep ignored/local build, cache and secret state outside Git source
+membership. Leave intent-to-add entries for normal human review/commit. Explicit
+`path:` sources are reserved for intentional raw/non-Git filesystem sources.
+See [the source-membership policy](AGENTS.md#git-aware-local-source-membership).
 
 This is the authoritative CI and reproducible qualification environment. It uses
 JDK 25, Gradle 9.8.0 and Python 3 from the committed Nix lockfile, with a fixed
@@ -96,7 +106,7 @@ same derivation's ten verified unsigned Maven-shaped artifacts under
 nixpkgs `gradle.fetchDeps`. Only when dependency inputs change, a human runs:
 
 ```sh
-nix run path:.#update-package-deps
+nix run .#update-package-deps
 ```
 
 Review every generated coordinate/version, artifact URL and SRI hash against the

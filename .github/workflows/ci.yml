@@ -26,4 +26,4 @@ jobs:
             accept-flake-config = true
 
       - name: Qualify Java libraries and publication artifacts
-        run: nix flake check --print-build-logs path:.
+        run: nix flake check --print-build-logs

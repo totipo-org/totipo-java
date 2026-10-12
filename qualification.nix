@@ -49,7 +49,7 @@ stdenv.mkDerivation (finalAttrs: {
   gradleUpdateTask = finalAttrs.gradleBuildTask;
   preBuild = ''
     if [ -z "''${IN_GRADLE_UPDATE_DEPS:-}" ] && [ "${if cacheReady then "yes" else "no"}" != yes ]; then
-      echo 'package-deps.json is ungenerated; run nix run path:.#update-package-deps' >&2
+      echo 'package-deps.json is ungenerated; run nix run .#update-package-deps' >&2
       exit 1
     fi
     # The sandbox has no external network. Only fixed URLs/hashes replay here.

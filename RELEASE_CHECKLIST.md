@@ -74,7 +74,7 @@ Follow these separate gates in order:
 1. Source preparation and breaking API review against canonical Central 0.1.5.
 2. Complete the applicable stable-boundary checks in the
    [qualification ladder](AGENTS.md#milestone-qualification-ladder), freeze included
-   inputs, then human final routine hermetic qualification: `nix flake check path:.`.
+   inputs, then human final routine hermetic qualification: `nix flake check`.
 3. Separate release artifact reproducibility comparison below; retain the normal
    inventory outside build outputs before forced offline rebuilding.
 4. Human review, release-source commit and review through the usual process.
@@ -170,8 +170,14 @@ final tag push uses an ephemeral process environment for authentication.
 The routine human source gate is exactly:
 
 ```sh
-nix flake check path:.
+nix flake check
 ```
+
+Use the current Git-aware working tree. Keep tracked modifications unstaged and
+make every intended new milestone file Git-known with `git add --intent-to-add`
+before this gate; `git diff --cached --quiet` must pass. Keep ignored/local build,
+cache and secret state outside source membership. See the
+[source-membership policy](AGENTS.md#git-aware-local-source-membership).
 
 It runs the full credential-free Java/build/publication/consumer/Python suite with
 pinned JDK 25, Gradle 9.8.0 and Python 3 on x86_64-linux, including wrapper identity,

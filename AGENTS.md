@@ -3,16 +3,45 @@
 Agents must not run Nix. The human routine Java Nix gate is exactly:
 
 ```sh
-nix flake check path:.
+nix flake check
 ```
 
 Do not request a second build for safety. `nix build` only materializes the same
 qualified unsigned library artifact output and is not another qualification gate.
 Dependency changes alone require the separate human cache update checkpoint:
-`nix run path:.#update-package-deps`, followed by cache review before qualification.
+`nix run .#update-package-deps`, followed by cache review before qualification.
 Keep the protected release workflow and its normal/offline ten-artifact comparison
 separate from routine qualification. Preserve Gradle locks, strict verification,
 consumer isolation, Java 17 bytecode and r19 integrity.
+
+## Git-aware local source membership
+
+Local pre-commit Nix qualification uses the current Git-aware working tree.
+Modified tracked files remain unstaged; their current working-tree bytes are
+qualified. For each new file intended for the milestone and eventual commit,
+agents may run:
+
+```sh
+git add --intent-to-add <file>
+```
+
+Intent-to-add establishes source membership only. Staging actual file contents
+remains prohibited without explicit user authorization. The invariant is no
+staged file content, rather than a literally empty index. After intent-to-add and
+before the final human gate, require `git diff --cached --quiet` to pass; record
+`git status --short`, `git diff --name-only` and `git diff --cached --name-only`.
+Every intended new milestone file, including its review report, must be Git-known
+before qualification. Leave intent-to-add entries in place for human review/commit.
+
+Use `nix flake check` for the final local human gate. Current-checkout commands
+use Git-aware forms such as `nix build .#<target>`, `nix run .#<app> -- ...` and
+`nix develop`. Explicit `path:` sources are allowed only when generated, exported,
+non-Git or deliberately raw filesystem semantics are intentional. Ignored/untracked
+local build, cache and secret state must remain outside Git source membership;
+never intent-add caches, generated build outputs, temporary evidence or secrets.
+The existing qualification source filter remains unchanged. Freeze included
+inputs before the human gate; later included-input edits invalidate its result.
+Only confirmed excluded reports may be finalized afterward.
 
 ## Milestone qualification ladder
 
@@ -108,7 +137,7 @@ Do not run release artifact reproducibility for routine code/docs milestones.
 ### Hermetic qualification, dependencies and freeze
 
 Routine hermetic/fixed-dependency proof is the single human command at the top
-of this file: `nix flake check path:.`. Its authoritative suite is already offline.
+of this file: `nix flake check`. Its authoritative suite is already offline.
 Do not automatically add a second host forced-offline full Gradle suite. Use a
 separate host forced-offline pass only for changes to dependency acquisition,
 Gradle/build behavior, publication resolution, consumer resolution or the fixed
@@ -117,14 +146,14 @@ cache, and record the independent evidence it supplies.
 For dependency-input changes, use this order:
 
 1. Focused Gradle resolution/update work; preserve locks and strict verification.
-2. Human cache checkpoint: `nix run path:.#update-package-deps`.
+2. Human cache checkpoint: `nix run .#update-package-deps`.
 3. Exhaustively inspect `package-deps.json`: every coordinate/version, URL and SRI
    hash against locks, verification metadata and canonical artifacts, including
    plugins/transitives and parent/BOM metadata. Reject unexpected modules, dynamic
    versions and snapshots; local Totipo artifacts must resolve from staging.
 4. Final normal Java gate.
 5. Freeze `qualification.nix`, Nix helpers, cache and every included source path.
-6. Final human `nix flake check path:.`.
+6. Final human `nix flake check`.
 
 Do not regenerate `package-deps` for unrelated work or implicitly update
 `flake.lock`/toolchains. Before requesting final Nix, freeze Java source, tests,
