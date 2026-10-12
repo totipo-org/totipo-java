@@ -2,8 +2,8 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :core:dependencies --write-locks
-com.fasterxml.jackson.core:jackson-core:2.18.2=testCompileClasspath,testRuntimeClasspath
-com.fasterxml.jackson:jackson-bom:2.18.2=testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-core:2.21.7=testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson:jackson-bom:2.21.7=testCompileClasspath,testRuntimeClasspath
 org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath
 org.bouncycastle:bcprov-jdk18on:1.86=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.jspecify:jspecify:1.0.0=testCompileClasspath
