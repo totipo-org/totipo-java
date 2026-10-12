@@ -17,6 +17,7 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+        tooling = pkgs.callPackage ./nix/tooling.nix { };
         javaQualification = pkgs.callPackage ./qualification.nix {
           jdk = pkgs.jdk25_headless;
           gradle = pkgs.gradle_9.override { java = pkgs.jdk25_headless; };
@@ -31,6 +32,7 @@
         };
         checks = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           java = javaQualification;
+          tooling = tooling.check;
           wrapper = pkgs.runCommand "totipo-java-wrapper-integrity" {
             nativeBuildInputs = [ pkgs.python3 ];
           } ''
@@ -41,6 +43,11 @@
           '';
         };
         apps = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          tooling = {
+            type = "app";
+            program = "${tooling.launcher}/bin/totipo-java-tool";
+            meta.description = "Standalone Java tooling bootstrap";
+          };
           update-package-deps = {
             type = "app";
             program = "${javaQualification.mitmCache.updateScript}";
