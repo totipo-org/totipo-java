@@ -33,14 +33,7 @@
         checks = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           java = javaQualification;
           tooling = tooling.check;
-          wrapper = pkgs.runCommand "totipo-java-wrapper-integrity" {
-            nativeBuildInputs = [ pkgs.python3 ];
-          } ''
-            python3 -B ${./nix/verify-wrapper.py} \
-              ${./gradle/wrapper/gradle-wrapper.jar} \
-              ${./gradle/wrapper/gradle-wrapper.properties}
-            touch "$out"
-          '';
+          wrapper = pkgs.callPackage ./nix/wrapper-verifier.nix { };
         };
         apps = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           tooling = {

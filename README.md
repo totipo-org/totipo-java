@@ -127,12 +127,24 @@ existing development shell (`nix develop` or `direnv allow`) or on the host:
 ./gradlew javadoc
 ```
 
+Ordinary `nix flake check` wrapper qualification uses a standalone Java verifier
+compiled directly with pinned JDK 25, without Gradle, Jackson or production
+classes. It checks the reviewed wrapper JAR SHA-256 and exact raw distribution
+URL/checksum declarations, including duplicates and continuations, without
+executing the wrapper or downloading anything. The Java and J1 tooling checks
+remain separate; sibling flake checks have no guaranteed execution order.
+The Java qualification still uses its pinned Gradle executable.
+
+Protected release workflows temporarily retain
+`python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties`.
+Python also remains required by publication/release guardrails. This migration
+changes no publication or release semantics.
+
 Wrapper maintenance uses the pinned `wrapper` task in `build.gradle.kts`:
 run `./gradlew wrapper` twice to regenerate with the selected distribution, then
-verify its identity with
-`python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties`.
-For an intentional Gradle update, review the distribution version/checksum and
-wrapper JAR identity in the build, wrapper verifier and release workflow together.
+review and qualify its identity. For an intentional Gradle update, review the
+distribution version/checksum and wrapper JAR identity in the build, both wrapper
+verifiers and release workflow together. Wrapper identity remains pinned.
 
 For intentional library dependency updates, use the existing maintenance command:
 
