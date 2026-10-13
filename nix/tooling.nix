@@ -43,6 +43,8 @@ let
     fileset = lib.fileset.unions [
       ../SPEC_PIN.md
       ../.github/workflows
+      ../.github/actions/setup-nix/action.yml
+      ../nix/tooling.nix
       ../build.gradle.kts
       ../publishing/consumer-smoke/settings.gradle.kts
       ../core/src/test/resources/totipo-spec/v1-pre-rc
@@ -79,7 +81,7 @@ let
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.TestResultsTest
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowPinsTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowPinsTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowBoundaryTest ${releaseIntegritySource} ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.

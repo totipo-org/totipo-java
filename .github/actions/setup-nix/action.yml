@@ -1,0 +1,38 @@
+name: Setup pinned Nix
+description: Install and validate the reviewed Totipo Nix runtime
+
+runs:
+  using: composite
+  steps:
+    - name: Acquire reviewed Nix installer without executing it
+      shell: bash
+      run: |
+        ! command -v nix || exit 1
+        test ! -e /nix/var/nix/profiles/default/bin/nix
+        curl --fail --silent --show-error --proto '=https' --max-time 60 \
+          https://releases.nixos.org/nix/nix-2.35.2/install -o "$RUNNER_TEMP/nix-install"
+        printf '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  %s\n' "$RUNNER_TEMP/nix-install" | sha256sum -c -
+    - name: Install reviewed Nix
+      uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      with:
+        install_url: file://${{ runner.temp }}/nix-install
+        enable_kvm: false
+        extra_nix_config: |
+          accept-flake-config = true
+          access-tokens =
+    - name: Validate Nix identity and remove bootstrap token configuration
+      shell: bash
+      run: |
+        installed_nix="$(nix --version)"
+        test "$installed_nix" = 'nix (Nix) 2.35.2'
+        # The pinned composite action supplies github.token internally. Remove
+        # every token declaration before any flake evaluation/build, including daemon config.
+        sudo sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' /etc/nix/nix.conf
+        if test -f "$HOME/.config/nix/nix.conf"; then
+          sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' "$HOME/.config/nix/nix.conf"
+        fi
+        sudo systemctl restart nix-daemon.service
+        unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES
+        for key in ${!ORG_GRADLE_PROJECT_@}; do unset "$key"; done
+        effective_tokens="$(nix config show access-tokens)"
+        test -z "$effective_tokens"

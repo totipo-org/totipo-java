@@ -61,7 +61,7 @@ public final class WorkflowBoundaryTest {
         for (String text : List.of(release, verify)) {
             require(text.contains("persist-credentials: false") && text.contains("GIT_NO_REPLACE_OBJECTS=1")
                 && text.contains("merge-base --is-ancestor") && text.contains("https://github.com/totipo-org/totipo-java.git")
-                && text.contains("--no-update-lock-file --no-write-lock-file") && text.contains("test -z \"$(nix config show access-tokens)\""));
+                && text.contains("--no-update-lock-file --no-write-lock-file"));
             require(!text.contains("run: ${{") && !text.contains("${{ inputs.commit }}\n          "));
         }
         require(settings.contains("remoteCentral") && settings.contains("pomOnly") && settings.contains("repo.maven.apache.org/maven2")
@@ -79,6 +79,40 @@ public final class WorkflowBoundaryTest {
         String build = Files.readString(root.resolve("build.gradle.kts"));
         String settings = Files.readString(root.resolve("publishing/consumer-smoke/settings.gradle.kts"));
         validate(release, verify, build, settings); WorkflowPins.check(root);
+        String action = Files.readString(root.resolve(WorkflowPins.BOOTSTRAP));
+        String acquire = actionRun(action, "Acquire reviewed Nix installer");
+        String cleanup = actionRun(action, "Validate Nix identity");
+        // These are external acquisition identities, not a checksum of local source.
+        require(acquire.contains("https://releases.nixos.org/nix/nix-2.35.2/install"));
+        require(acquire.contains("9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c"));
+        String downloadFakes = "RUNNER_TEMP=/fixture; curl() { :; }; sha256sum() { return HASH_STATUS; };\n";
+        require(shell(args[1], downloadFakes.replace("HASH_STATUS", "0") + acquire) == 0);
+        require(shell(args[1], downloadFakes.replace("HASH_STATUS", "7") + acquire) == 7);
+        // Execute only actual shell bodies with built-in function fakes: no Nix,
+        // downloader, sudo, daemon or real configuration is ever invoked here.
+        require(shell(args[1], "nix() { :; }; curl() { exit 99; };\n" + acquire) == 1);
+        String fakes = "sudo() { :; }; sed() { :; };\n"
+            + "nix() { if [[ $1 == --version ]]; then printf '%s\\n' 'nix (Nix) 2.35.2'; return VERSION_STATUS; "
+            + "else printf '%s' 'TOKEN_VALUE'; return TOKEN_STATUS; fi; };\n";
+        for (String[] example : List.of(new String[]{"0", "0", "", "0"},
+            new String[]{"7", "0", "", "7"}, new String[]{"0", "7", "", "7"},
+            new String[]{"0", "0", "github.com=fixture", "1"})) {
+            String script = fakes.replace("VERSION_STATUS", example[0]).replace("TOKEN_STATUS", example[1])
+                .replace("TOKEN_VALUE", example[2]) + cleanup;
+            require(shell(args[1], script) == Integer.parseInt(example[3]));
+        }
+        require(shell(args[1], fakes.replace("VERSION_STATUS", "7").replace("TOKEN_STATUS", "0")
+            .replace("TOKEN_VALUE", "").replace("nix (Nix) 2.35.2", "") + cleanup) == 7);
+        for (String text : List.of(job(release, "preflight"), job(release, "publish-central"), job(verify, "verify"), job(verify, "finalize"))) {
+            WorkflowPins.inspectSetup(text, 1);
+            require(text.indexOf(WorkflowPins.SETUP) < text.indexOf(".#release-runtime"));
+            require(text.contains("unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES")
+                && text.contains("${!ORG_GRADLE_PROJECT_@}"));
+        }
+        String sourceFilter = Files.readString(root.resolve("nix/tooling.nix"));
+        validateSourceFilter(sourceFilter);
+        reject(() -> validateSourceFilter(sourceFilter.replace("      ../.github/actions/setup-nix/action.yml\n", "")));
+        reject(() -> validateSourceFilter(sourceFilter.replace("      ../nix/tooling.nix\n", "")));
         for (String[] edit : List.of(new String[]{"false && github.run_attempt == 1", "github.run_attempt == 1"},
             new String[]{"release reserve", "release tagged"}, new String[]{"needs: [preflight, publish-central]", "needs: preflight"},
             new String[]{"export ORG_GRADLE_PROJECT_centralUpload=true", "true"}))
@@ -99,5 +133,26 @@ public final class WorkflowBoundaryTest {
             ok(Files.readString(output).equals("version=0.2.0\ncommit=" + "a".repeat(40) + "\n"));
         } finally { Files.delete(output); }
         System.out.println("Actual workflow activation, one-invocation, isolation and input regressions PASS");
+    }
+    static void validateSourceFilter(String text) throws Exception {
+        int start = text.indexOf("  releaseIntegritySource = lib.fileset.toSource {");
+        int end = text.indexOf("  classes =", start);
+        require(start >= 0 && end > start);
+        String fixture = text.substring(start, end);
+        require(fixture.contains("      ../.github/actions/setup-nix/action.yml\n")
+            && fixture.contains("      ../nix/tooling.nix\n") && fixture.contains("      ../.github/workflows\n"));
+        require(!fixture.contains("../review") && !fixture.contains("../.github/actions\n"));
+    }
+    static String actionRun(String action, String name) throws Exception {
+        int step = action.indexOf("    - name: " + name); require(step >= 0);
+        int start = action.indexOf("      run: |\n", step) + "      run: |\n".length();
+        int end = action.indexOf("    - name:", start);
+        return action.substring(start, end < 0 ? action.length() : end).stripIndent();
+    }
+    static int shell(String bash, String script) throws Exception {
+        var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script);
+        process.environment().clear(); process.environment().put("HOME", "/nonexistent-totipo-shell-fixture");
+        process.redirectOutput(ProcessBuilder.Redirect.DISCARD); process.redirectError(ProcessBuilder.Redirect.DISCARD);
+        return process.start().waitFor();
     }
 }
