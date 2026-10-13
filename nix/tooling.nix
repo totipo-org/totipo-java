@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, fetchurl, jdk25_headless, writeShellScriptBin, runCommand }:
+{ lib, stdenvNoCC, fetchurl, jdk25_headless, writeShellScriptBin, runCommand, gitMinimal }:
 let
   jdk = jdk25_headless;
   catalog = builtins.fromTOML (builtins.readFile ../gradle/libs.versions.toml);
@@ -47,7 +47,7 @@ let
   };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
-    version = "j3b1";
+    version = "j3b2";
     src = source;
     dontConfigure = true;
     buildPhase = ''
@@ -71,6 +71,10 @@ let
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.publication.PublicationTest
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.ReleaseTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.AuthorizationTest ${stdenvNoCC.shell}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.RemoteVerificationTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationTest ${releaseIntegritySource}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.PreparationApplicationTest ${releaseIntegritySource}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${releaseIntegritySource} ${gitMinimal}/bin/git ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.
       cat > Forbidden.java <<'JAVA'
