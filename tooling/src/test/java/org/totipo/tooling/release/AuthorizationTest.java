@@ -9,10 +9,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.totipo.tooling.publication.AcceptedFixture;
+import org.totipo.tooling.publication.PublicationTest;
 import org.totipo.tooling.publication.PublicationManifest;
-import static org.totipo.tooling.release.PublicationPolicy.*;
-import static org.totipo.tooling.release.RemoteReleaseState.*;
 
 /** Permanent offline, credential-free regression runner; no Python or GPG installation needed. */
 public final class AuthorizationTest {
@@ -44,53 +42,10 @@ public final class AuthorizationTest {
         }
     }
     static void signed(Path root) throws Exception { AcceptedArtifacts.signed(root, manifest(root), staging(root), VERSION); }
-    static Map<String, String> environment() {
-        var env = new HashMap<String, String>();
-        for (String name : new String[]{"mavenCentralUsername", "mavenCentralPassword", "signingInMemoryKey"})
-            env.put(SecretPreflight.PREFIX + name, "synthetic-secret-never-log");
-        return env;
-    }
     static void remove(Path root) throws IOException {
         try (var paths = Files.walk(root)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
         }
-    }
-    static void policy() throws Exception {
-        reject(() -> new Decision(Disposition.CANDIDATE_PUBLISH, Reason.PROPAGATION_UNCERTAIN));
-        for (Presence core : Presence.values()) for (Presence storage : Presence.values()) for (PriorAttempt prior : PriorAttempt.values()) {
-            boolean present = core == Presence.PRESENT || storage == Presence.PRESENT;
-            Disposition expected = present ? prior == PriorAttempt.POSSIBLE_UPLOAD ? Disposition.VERIFY_EXISTING : Disposition.BLOCKED
-                    : prior == PriorAttempt.POSSIBLE_UPLOAD ? Disposition.BLOCKED : Disposition.CANDIDATE_PUBLISH;
-            check(interpret(new RemoteReleaseState(core, storage, prior)).disposition() == expected);
-        }
-        var absent = new RemoteReleaseState(Presence.ABSENT, Presence.ABSENT, PriorAttempt.NO_RECORDED_UPLOAD);
-        for (Boundary boundary : Boundary.values()) {
-            AtomicInteger calls = new AtomicInteger();
-            for (Presence later : Presence.values()) {
-                Observation observation = () -> calls.getAndIncrement() % 2 == 0 ? absent
-                        : new RemoteReleaseState(later, Presence.ABSENT, PriorAttempt.NO_RECORDED_UPLOAD);
-                check(assess(Boundary.INITIAL, observation).disposition() == Disposition.CANDIDATE_PUBLISH);
-                check(assess(boundary, observation).disposition() == (later == Presence.PRESENT ? Disposition.BLOCKED : Disposition.CANDIDATE_PUBLISH));
-            }
-            check(calls.get() == 4);
-            check(assess(boundary, () -> new RemoteReleaseState(Presence.ABSENT, Presence.ABSENT, PriorAttempt.POSSIBLE_UPLOAD)).reason() == Reason.PROPAGATION_UNCERTAIN);
-            check(assess(boundary, () -> { throw new IOException("secret API material"); }).reason() == Reason.OBSERVATION_UNAVAILABLE);
-            check(assess(boundary, () -> null).disposition() == Disposition.BLOCKED);
-        }
-        for (boolean historyFailure : new boolean[]{false, true}) {
-            AtomicInteger reads = new AtomicInteger();
-            Observation changing = () -> {
-                if (reads.getAndIncrement() == 0) return absent;
-                if (historyFailure) throw new IOException("API unavailable");
-                return new RemoteReleaseState(Presence.ABSENT, Presence.ABSENT, PriorAttempt.POSSIBLE_UPLOAD);
-            };
-            check(assess(Boundary.INITIAL, changing).disposition() == Disposition.CANDIDATE_PUBLISH);
-            check(assess(Boundary.IMMEDIATELY_BEFORE_UPLOAD, changing).disposition() == Disposition.BLOCKED);
-            check(reads.get() == 2);
-        }
-        // Later history and transport uncertainty never reuse initial candidates.
-        check(assess(Boundary.INITIAL, () -> absent).disposition() == Disposition.CANDIDATE_PUBLISH);
-        check(assess(Boundary.IMMEDIATELY_BEFORE_UPLOAD, () -> new RemoteReleaseState(Presence.ABSENT, Presence.PRESENT, PriorAttempt.NO_RECORDED_UPLOAD)).disposition() == Disposition.BLOCKED);
     }
     static void inventory(Path root) throws Exception {
         byte[] original = Files.readAllBytes(manifest(root));
@@ -173,62 +128,10 @@ public final class AuthorizationTest {
         signed(root); assertions++;
     }
     static Path createParent(Path path) throws IOException { Files.createDirectories(path.getParent()); return path; }
-    static void secrets() throws Exception {
-        var env = environment();
-        for (String name : env.keySet()) {
-            var missing = new HashMap<>(env); missing.remove(name);
-            reject(() -> SecretPreflight.check(missing, key -> { throw new AssertionError("inspected despite missing secret"); }));
-            missing.put(name, ""); reject(() -> SecretPreflight.check(missing, key -> SecretPreflight.Protection.UNPROTECTED));
-        }
-        check(SecretPreflight.check(env, key -> SecretPreflight.Protection.UNPROTECTED) == SecretPreflight.Protection.UNPROTECTED);
-        reject(() -> SecretPreflight.check(env, key -> SecretPreflight.Protection.PROTECTED));
-        env.put(SecretPreflight.PREFIX + "signingInMemoryKeyPassword", "synthetic-password");
-        check(SecretPreflight.check(env, key -> SecretPreflight.Protection.PROTECTED) == SecretPreflight.Protection.PROTECTED);
-        reject(() -> SecretPreflight.check(env, key -> null));
-        try { SecretPreflight.check(env, key -> { throw new IOException(key + " packet dump"); }); throw new AssertionError(); }
-        catch (IOException expected) { check(expected.getMessage().equals("Private key inspection failed") && expected.getCause() == null); }
-        for (String bad : new String[]{"", ":public key packet:\n", "garbage\n:secret key packet:\n", ":secret key packet:\n\u0000", " :secret key packet:\n"})
-            reject(() -> GpgPacketInspector.metadata(bytes(bad)));
-        check(GpgPacketInspector.metadata(bytes(":secret key packet:\n\tskey[3]: [2048 bits]\n")) == SecretPreflight.Protection.UNPROTECTED);
-        check(GpgPacketInspector.metadata(bytes(":secret key packet:\n\tskey[3]: [v4 protected]\n")) == SecretPreflight.Protection.PROTECTED);
-        check(GpgPacketInspector.metadata(bytes(":secret key packet:\n\tprotect algo: 7\n")) == SecretPreflight.Protection.PROTECTED);
-        check(GpgPacketInspector.metadata(bytes(":secret key packet:\r\n:user ID packet: \"Nikolай\"\r\n")) == SecretPreflight.Protection.UNPROTECTED);
-        reject(() -> GpgPacketInspector.metadata(new byte[GpgPacketInspector.MAX_OUTPUT + 1]));
-    }
     public static void main(String[] args) throws Exception {
-        policy(); secrets();
         Path root = Files.createTempDirectory("authorization-test-");
-        try { AcceptedFixture.create(root); inventory(root); signing(root); }
+        try { PublicationTest.acceptedFixture(root); inventory(root); signing(root); }
         finally { remove(root); }
-        process(args.length == 0 ? "/bin/sh" : args[0]);
-        System.out.println("J3B.1 authorization tests: " + assertions + " assertions passed");
-    }
-    static void process(String shell) throws Exception {
-        // Spawn a Java fake executable via an explicit test launcher, never invoke real GPG.
-        Path root = Files.createTempDirectory("packet-process-test-");
-        try {
-            Path launcher = root.resolve("fake-gpg");
-            String javaExecutable = Path.of(System.getProperty("java.home"), "bin/java").toString();
-            String cp = java.util.Arrays.stream(System.getProperty("java.class.path").split(java.io.File.pathSeparator))
-                    .map(x -> Path.of(x).toAbsolutePath().toString()).collect(java.util.stream.Collectors.joining(java.io.File.pathSeparator));
-            for (String mode : new String[]{"ok", "protected", "fail", "timeout", "oversized", "malformed", "stderr", "stdin-block"}) {
-                // Paths are generated test paths. Single quote escaping keeps the fixed fake launcher safe.
-                String command = "#!" + shell + "\nexec '" + javaExecutable.replace("'", "'\\''") + "' -cp '" + cp.replace("'", "'\\''")
-                        + "' org.totipo.tooling.release.FakeGpg '" + mode + "' \"$@\"\n";
-                Files.writeString(launcher, command); check(launcher.toFile().setExecutable(true));
-                var inspector = new GpgPacketInspector(launcher, root, Duration.ofSeconds(mode.equals("timeout") || mode.equals("stdin-block") ? 1 : 10));
-                if (mode.equals("ok") || mode.equals("protected"))
-                    check(inspector.inspect("synthetic-key") == (mode.equals("ok") ? SecretPreflight.Protection.UNPROTECTED : SecretPreflight.Protection.PROTECTED));
-                else {
-                    try { inspector.inspect(mode.equals("stdin-block") ? "x".repeat(200_000) : "synthetic-key"); throw new AssertionError("Process failure accepted"); }
-                    catch (IOException failure) {
-                        check(failure.getMessage().equals("Private key packet inspection failed") && failure.getCause() == null
-                                && failure.getSuppressed().length == 0);
-                    }
-                }
-                try (var children = Files.list(root)) { check(children.count() == 1); }
-            }
-            reject(() -> new GpgPacketInspector(launcher, root, Duration.ofSeconds(1)).inspect("x".repeat(GpgPacketInspector.MAX_KEY + 1)));
-        } finally { remove(root); }
+        System.out.println("Signing/inventory tests: " + assertions + " assertions passed");
     }
 }

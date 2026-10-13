@@ -43,7 +43,7 @@ public final class SourceFiles {
         }
     }
     public String text(String relative) throws IOException {
-        // Match Python text-mode universal newline translation; emitted plan bytes are UTF-8/LF.
+        // Established universal newline normalization for reviewed prose.
         return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(read(relative, 2 * 1024 * 1024)))
                 .toString().replace("\r\n", "\n").replace('\r', '\n');
     }

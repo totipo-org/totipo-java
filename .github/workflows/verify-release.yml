@@ -1,0 +1,212 @@
+name: Verify Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact reviewed VERSION
+        required: true
+        type: string
+      commit:
+        description: Exact lowercase 40-character reviewed source SHA
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      commit:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  REQUESTED_VERSION: ${{ inputs.version }}
+  REQUESTED_COMMIT: ${{ inputs.commit }}
+  DISPATCH_REF: ${{ github.ref }}
+  DISPATCH_SHA: ${{ github.sha }}
+  GRADLE_OPTS: -Dorg.gradle.configuration-cache=false -Dorg.gradle.daemon=false
+
+concurrency:
+  group: release-verify-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.inputs.outputs.version }}
+      commit: ${{ steps.inputs.outputs.commit }}
+    steps:
+      - name: Validate bounded inputs before checkout
+        id: inputs
+        run: |
+          test "${#REQUESTED_VERSION}" -le 128
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]]
+          [[ "${REQUESTED_VERSION^^}" != *-SNAPSHOT ]]
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$DISPATCH_REF" = refs/heads/main
+          printf 'version=%s\ncommit=%s\n' "$REQUESTED_VERSION" "$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.inputs.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Authenticate checkout before executing its tooling
+        run: |
+          test "$GITHUB_REPOSITORY" = totipo-org/totipo-java
+          test "$(git --no-replace-objects rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          printf '%s\n' "$REQUESTED_VERSION" | cmp - VERSION
+          test -z "$(git status --porcelain --untracked-files=all)"
+          export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c core.hooksPath=/dev/null -c http.followRedirects=false fetch \
+            --no-tags --no-recurse-submodules -- https://github.com/totipo-org/totipo-java.git \
+            +refs/heads/main:refs/remotes/release/main
+          git merge-base --is-ancestor "$REQUESTED_COMMIT" refs/remotes/release/main
+      - name: Acquire reviewed Nix installer without executing it
+        run: |
+          ! command -v nix
+          test ! -e /nix/var/nix/profiles/default/bin/nix
+          curl --fail --silent --show-error --proto '=https' --max-time 60 \
+            https://releases.nixos.org/nix/nix-2.35.2/install -o "$RUNNER_TEMP/nix-install"
+          printf '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  %s\n' "$RUNNER_TEMP/nix-install" | sha256sum -c -
+      - name: Install reviewed Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: file://${{ runner.temp }}/nix-install
+          enable_kvm: false
+          extra_nix_config: |
+            accept-flake-config = true
+            access-tokens =
+      - name: Remove bootstrap token configuration and build pinned runtime without credentials
+        run: |
+          test "$(nix --version)" = 'nix (Nix) 2.35.2'
+          # The pinned composite action supplies github.token internally. Remove
+          # every token declaration before any flake evaluation/build, including daemon config.
+          sudo sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' /etc/nix/nix.conf
+          if test -f "$HOME/.config/nix/nix.conf"; then
+            sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' "$HOME/.config/nix/nix.conf"
+          fi
+          sudo systemctl restart nix-daemon.service
+          unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES
+          for key in ${!ORG_GRADLE_PROJECT_@}; do unset "$key"; done
+          test -z "$(nix config show access-tokens)"
+          nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
+          runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
+          printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
+      - name: Verify wrapper and actual workflow guardrails
+        run: |
+          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          totipo-java-tool release workflow-pins "$PWD"
+      - name: Authenticate existing annotated tag and reviewed source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: totipo-java-tool release tagged "$PWD"
+      - name: Reconstruct ten expected artifacts independently of the publishing run
+        run: |
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
+          totipo-java-tool publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+      - name: Verify Central bytes and all detached signature evidence
+        run: totipo-java-tool release remote "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+      - name: Independent Central module-metadata consumer
+        run: |
+          consumer_home="$(mktemp -d "$RUNNER_TEMP/central-module.XXXXXX")"
+          GRADLE_USER_HOME="$consumer_home" ./gradlew -p publishing/consumer-smoke \
+            --no-daemon --no-build-cache --no-configuration-cache --dependency-verification=strict -PremoteCentral clean check
+      - name: Independent Central POM-only consumer
+        run: |
+          consumer_home="$(mktemp -d "$RUNNER_TEMP/central-pom.XXXXXX")"
+          GRADLE_USER_HOME="$consumer_home" ./gradlew -p publishing/consumer-smoke \
+            --no-daemon --no-build-cache --no-configuration-cache --dependency-verification=strict -PremoteCentral -PpomOnly clean check
+          git diff --check
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+  finalize:
+    # J4B ACTIVATION GUARD: only a separately reviewed source change may enable mutation.
+    if: ${{ false }}
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Validate bounded inputs before checkout
+        id: inputs
+        run: |
+          test "${#REQUESTED_VERSION}" -le 128
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]]
+          [[ "${REQUESTED_VERSION^^}" != *-SNAPSHOT ]]
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$DISPATCH_REF" = refs/heads/main
+          printf 'version=%s\ncommit=%s\n' "$REQUESTED_VERSION" "$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.inputs.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Authenticate checkout before executing its tooling
+        run: |
+          test "$GITHUB_REPOSITORY" = totipo-org/totipo-java
+          test "$(git --no-replace-objects rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          printf '%s\n' "$REQUESTED_VERSION" | cmp - VERSION
+          test -z "$(git status --porcelain --untracked-files=all)"
+          export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c core.hooksPath=/dev/null -c http.followRedirects=false fetch \
+            --no-tags --no-recurse-submodules -- https://github.com/totipo-org/totipo-java.git \
+            +refs/heads/main:refs/remotes/release/main
+          git merge-base --is-ancestor "$REQUESTED_COMMIT" refs/remotes/release/main
+      - name: Acquire reviewed Nix installer without executing it
+        run: |
+          ! command -v nix
+          test ! -e /nix/var/nix/profiles/default/bin/nix
+          curl --fail --silent --show-error --proto '=https' --max-time 60 \
+            https://releases.nixos.org/nix/nix-2.35.2/install -o "$RUNNER_TEMP/nix-install"
+          printf '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  %s\n' "$RUNNER_TEMP/nix-install" | sha256sum -c -
+      - name: Install reviewed Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: file://${{ runner.temp }}/nix-install
+          enable_kvm: false
+          extra_nix_config: |
+            accept-flake-config = true
+            access-tokens =
+      - name: Remove bootstrap token configuration and build pinned runtime without credentials
+        run: |
+          test "$(nix --version)" = 'nix (Nix) 2.35.2'
+          # The pinned composite action supplies github.token internally. Remove
+          # every token declaration before any flake evaluation/build, including daemon config.
+          sudo sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' /etc/nix/nix.conf
+          if test -f "$HOME/.config/nix/nix.conf"; then
+            sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' "$HOME/.config/nix/nix.conf"
+          fi
+          sudo systemctl restart nix-daemon.service
+          unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES
+          for key in ${!ORG_GRADLE_PROJECT_@}; do unset "$key"; done
+          test -z "$(nix config show access-tokens)"
+          nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
+          runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
+          printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
+      - name: Verify wrapper and actual workflow guardrails
+        run: |
+          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          totipo-java-tool release workflow-pins "$PWD"
+      - name: Create or validate exact GitHub Release from authenticated existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: totipo-java-tool release finalize "$PWD"

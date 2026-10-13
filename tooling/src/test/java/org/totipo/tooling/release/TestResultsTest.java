@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Disposable XML fixtures; no Gradle/Python needed. Export is only for the host migration oracle. */
+/** Permanent disposable XML accounting fixtures. */
 public final class TestResultsTest {
     private TestResultsTest() {}
     static int assertions;
@@ -68,9 +68,8 @@ public final class TestResultsTest {
         } catch (TestResults.AccountingException failure) { return "FAIL\t" + failure.failure(); }
     }
     public static void main(String[] args) throws Exception {
-        Path export = args.length == 0 ? Files.createTempDirectory("totipo-xml-") : Path.of(args[0]);
+        Path export = Files.createTempDirectory("totipo-xml-");
         Files.createDirectories(export);
-        StringBuilder results = new StringBuilder();
         try {
             for (String name : CASES) {
                 Path root = export.resolve(name); boolean focused = name.equals("focused");
@@ -79,16 +78,14 @@ public final class TestResultsTest {
                 ok(result.startsWith(name.equals("full") || focused ? "PASS" : "FAIL"));
                 if (name.equals("full")) ok(result.equals("PASS\t7\t3\t1\ttrue"));
                 if (focused) ok(result.equals("PASS\t4\t3\t1\tfalse"));
-                results.append(name).append('\t').append(result).append('\n');
             }
-            Files.writeString(export.resolve("results.tsv"), results);
             Path extra = Files.createTempDirectory("totipo-xml-limits-");
             try {
                 fixture(extra, true);
                 for (int i = 0; i < TestResults.MAX_FILES; i++) write(core(extra, "limit-" + i), suite("unique" + i, 0));
                 ok(outcome(extra, true).equals("FAIL\tLIMIT"));
-            } finally { PreparationApplicationTest.remove(extra); }
-            System.out.println("TestResultsTest PASS: " + assertions + " assertions; " + CASES.size() + " differential fixtures");
-        } finally { if (args.length == 0) PreparationApplicationTest.remove(export); }
+            } finally { AuthorizationTest.remove(extra); }
+            System.out.println("TestResultsTest PASS: " + assertions + " assertions; " + CASES.size() + " accounting fixtures");
+        } finally { AuthorizationTest.remove(export); }
     }
 }

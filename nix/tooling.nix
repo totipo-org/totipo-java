@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, fetchurl, jdk25_headless, writeShellScriptBin, runCommand, gitMinimal }:
+{ lib, stdenvNoCC, fetchurl, jdk25_headless, writeShellScriptBin, runCommand }:
 let
   jdk = jdk25_headless;
   catalog = builtins.fromTOML (builtins.readFile ../gradle/libs.versions.toml);
@@ -42,14 +42,18 @@ let
     root = ../.;
     fileset = lib.fileset.unions [
       ../SPEC_PIN.md
+      ../.github/workflows
+      ../build.gradle.kts
+      ../publishing/consumer-smoke/settings.gradle.kts
       ../core/src/test/resources/totipo-spec/v1-pre-rc
     ];
   };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
-    version = "j4a";
+    version = "j4b";
     src = source;
     dontConfigure = true;
+    LC_ALL = "C.UTF-8";
     buildPhase = ''
       runHook preBuild
       mkdir classes
@@ -73,13 +77,10 @@ let
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.AuthorizationTest ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.RemoteVerificationTest
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationTest ${releaseIntegritySource}
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.PreparationApplicationTest ${releaseIntegritySource}
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${releaseIntegritySource} ${gitMinimal}/bin/git ${stdenvNoCC.shell}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.TestResultsTest
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowEvidenceTest
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.CentralConsumersTest
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowPinsTest
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.ReleaseWorkflowIntegrationTest ${releaseIntegritySource}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowBoundaryTest ${releaseIntegritySource} ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.
       cat > Forbidden.java <<'JAVA'
@@ -104,7 +105,8 @@ let
     '';
   };
   launcher = writeShellScriptBin "totipo-java-tool" ''
-    exec ${jdk}/bin/java -cp "${classes}/classes:${jackson}" org.totipo.tooling.Main "$@"
+    exec ${jdk}/bin/java -Djava.io.tmpdir="''${TMPDIR:-/tmp}" \
+      -cp "${classes}/classes:${jackson}" org.totipo.tooling.Main "$@"
   '';
   check = runCommand "totipo-java-tooling-check" { } ''
     ${launcher}/bin/totipo-java-tool smoke

@@ -1,4 +1,4 @@
-{ lib, stdenv, jdk, gradle, python3, publicationTool }:
+{ lib, stdenv, jdk, gradle, publicationTool }:
 let
   version = lib.removeSuffix "\n" (builtins.readFile ./VERSION);
   cache = builtins.fromJSON (builtins.readFile ./package-deps.json);
@@ -34,8 +34,9 @@ stdenv.mkDerivation (finalAttrs: {
     pkg = finalAttrs.finalPackage;
     data = ./package-deps.json;
   };
-  nativeBuildInputs = [ gradle python3 ];
+  nativeBuildInputs = [ gradle ];
   JAVA_HOME = "${jdk}/lib/openjdk";
+  TOTIPO_PUBLICATION_TOOL = "${publicationTool}/bin/totipo-java-tool";
   LC_ALL = "C.UTF-8";
   gradleFlags = [
     "--no-configuration-cache"
@@ -62,26 +63,14 @@ stdenv.mkDerivation (finalAttrs: {
   checkPhase = ''
     set -o pipefail
     runHook preCheck
-    python3 -B publishing/release.py tests | tee test-summary.txt
-    python3 -B -m unittest discover -s publishing -p 'test_*.py'
-    echo 'Python release guardrail unit tests passed' >> test-summary.txt
-    python3 -B publishing/publication.py check
-    # Independent prebuilt Java verifier: same staged bytes, no producer rebuild.
-    # Python retains acceptance authority; Java evidence stays outside the checkout.
-    shadowEvidence=$(mktemp -d)
-    ${publicationTool}/bin/totipo-java-tool publication verify "$PWD" "$PWD/build/repository" \
-      "$shadowEvidence/manifest.json" "$shadowEvidence/consumer.xml"
-    cmp build/publication-manifest.json "$shadowEvidence/manifest.json"
-    cmp publishing/consumer-smoke/gradle/verification-metadata.xml "$shadowEvidence/consumer.xml"
-    ${publicationTool}/bin/totipo-java-tool publication check "$PWD" "$PWD/build/repository" \
-      "$shadowEvidence/manifest.json"
-    echo 'Independent Java/Python publication evidence byte parity passed' >> test-summary.txt
+    ${publicationTool}/bin/totipo-java-tool release test-results "$PWD" | tee test-summary.txt
+    ${publicationTool}/bin/totipo-java-tool publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
     gradle -p publishing/consumer-smoke -PpomOnly clean check
     echo 'Independent module-metadata and POM-only consumers passed' >> test-summary.txt
     # Account for the full suite above before focused tests replace core XML.
     gradle :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest \
       --tests org.totipo.conformance.R19ProfileIntegrityTest
-    python3 -B publishing/release.py focused-tests | tee -a test-summary.txt
+    ${publicationTool}/bin/totipo-java-tool release focused-test-results "$PWD" | tee -a test-summary.txt
     (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
     runHook postCheck
   '';
@@ -89,7 +78,9 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
     mkdir -p "$out/publication"
     # Copy only the verifier's ten unsigned artifacts, excluding timestamped indexes.
-    python3 -B publishing/publication.py copy "$out/publication"
+    # Secure directory creation uses atomic moves; keep its temporary directories
+    # on the output filesystem, which can differ from the build's TMPDIR mount.
+    TMPDIR="$out" ${publicationTool}/bin/totipo-java-tool publication copy "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json" "$out/publication"
     cp build/publication-manifest.json "$out/publication-manifest.json"
     cp test-summary.txt "$out/test-summary.txt"
     cat core/gradle.lockfile storage-nio/gradle.lockfile \

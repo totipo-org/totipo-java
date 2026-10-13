@@ -23,11 +23,10 @@ public final class WorkflowPinsTest {
             Path yaml = root.resolve(".github/workflows/test.yml");
             TestResultsTest.write(yaml, valid);
             ReleaseTest.reject(() -> WorkflowPins.check(root));
-            TestResultsTest.write(yaml, valid + "\nuses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1\n"
-                + "uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1\n");
+            TestResultsTest.write(yaml, valid + "\nuses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1\n");
             WorkflowPins.check(root);
             Files.delete(yaml); ReleaseTest.reject(() -> WorkflowPins.check(root));
             System.out.println("WorkflowPinsTest PASS: original guard negatives and complete pin inventory");
-        } finally { PreparationApplicationTest.remove(root); }
+        } finally { AuthorizationTest.remove(root); }
     }
 }

@@ -92,10 +92,10 @@ membership. Leave intent-to-add entries for normal human review/commit. Explicit
 See [the source-membership policy](AGENTS.md#git-aware-local-source-membership).
 
 This is the authoritative CI and reproducible qualification environment. It uses
-JDK 25, Gradle 9.8.0 and Python 3 from the committed Nix lockfile, with a fixed
+JDK 25 and Gradle 9.8.0 from the committed Nix lockfile, with a fixed
 Gradle dependency cache. It runs the full Java tests, r19 accounting/integrity,
 build/Javadocs/sources, publication verification, independent module and POM-only
-consumers, and Python release guardrails. Qualification runs offline after filling
+consumers, and standalone Java tooling guardrails. Qualification runs offline after filling
 an isolated Gradle home from the fixed local replay cache; Gradle locks and strict
 verification remain enabled. No signing, upload, tagging or release action runs.
 No second ordinary Nix build is needed. `nix build` optionally materializes the
@@ -129,26 +129,28 @@ existing development shell (`nix develop` or `direnv allow`) or on the host:
 
 Ordinary `nix flake check` wrapper qualification uses a standalone Java verifier
 compiled directly with pinned JDK 25, without Gradle, Jackson or production
-classes. Both checkers authenticate the complete properties file and wrapper JAR with
+classes. The checker authenticates the complete properties file and wrapper JAR with
 independently pinned SHA-256 values. They also check exact raw distribution
 URL/checksum declarations, including duplicates and continuations, without
 executing the wrapper or downloading anything. The Java and J1 tooling checks
 remain separate; sibling flake checks have no guaranteed execution order.
 The Java qualification still uses its pinned Gradle executable.
 
-Protected release workflows temporarily retain
-`python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties`.
-Python also remains required by publication/release guardrails. This migration
-changes no publication or release semantics.
+Release workflows use that same independent Java wrapper verifier and prebuilt
+Java publication tooling. Direct host publication checks require
+`TOTIPO_PUBLICATION_TOOL` pointing to the standalone launcher; see the
+[release checklist](RELEASE_CHECKLIST.md#qualification-and-release-reproducibility).
+Repository release tooling has no Python interpreter requirement. Third-party
+runner/bootstrap infrastructure may internally use Python.
 
 Wrapper maintenance uses the pinned `wrapper` task in `build.gradle.kts`:
 run `./gradlew wrapper` twice to regenerate with the selected distribution, then
 review and qualify its identity. For an intentional Gradle update, review the
-distribution version/checksum and wrapper JAR identity in the build, both wrapper
-verifiers and release workflow together. Review both the JAR and complete
+distribution version/checksum and wrapper JAR identity in the build, the wrapper
+verifier and independent test pins and release workflow together. Review both the JAR and complete
 properties-file identities. Only the exact reviewed properties bytes are accepted:
 comments, whitespace, line endings, declaration order and final-newline changes
-all require a deliberate reviewed properties pin update in both checkers.
+all require a deliberate reviewed properties pin update in the checker and independent tests.
 
 For intentional library dependency updates, use the existing maintenance command:
 
@@ -166,7 +168,7 @@ Record milestone classification before choosing validation. Follow the durable
 [qualification ladder](AGENTS.md#milestone-qualification-ladder): one ordinary
 `./gradlew test` baseline, focused module/API tests during iteration, then once
 stable `./gradlew test build javadoc verifyPublication consumerSmoke`, full test
-accounting, Python guardrails, publication verification and the independent
+accounting, standalone Java guardrails, publication verification and the independent
 POM-only consumer as specified there. Publication, consumer and release-helper
 edits use their relevant focused baselines. Pure docs/Javadocs use Javadoc plus
 contract tests where appropriate; source-Javadoc edits also qualify packaged
@@ -178,7 +180,7 @@ Freeze all qualification inputs before the final human Nix gate. Its suite
 already runs offline; a separate host forced-offline full suite needs a specific
 build/dependency/resolution reason and an explanation of independent evidence.
 The normal/offline ten-artifact comparison remains mandatory for explicit
-[release preparation](RELEASE_CHECKLIST.md#routine-source-qualification-and-release-artifact-reproducibility),
+[release preparation](RELEASE_CHECKLIST.md#qualification-and-release-reproducibility),
 separate from routine development. Move expensive checks to stable boundaries;
 retain all final qualification coverage.
 
@@ -232,7 +234,12 @@ The Maven coordinates for published Java implementation version **0.1.5** are
 shown below.
 Maven Central is the binary distribution channel; the manually dispatched
 [Release workflow](.github/workflows/release.yml) validates, signs, publishes and
-verifies each release before creating its source tag and GitHub release.
+reserves an immutable version tag before signing/upload, then independently verifies
+Central and creates the GitHub Release. **J4B leaves live release mutations disabled**;
+this is the intended automatic experience after separate owner activation. Start
+Release once with the exact reviewed version/SHA; use the independently rerunnable
+[Verify Release workflow](.github/workflows/verify-release.yml) for verification
+recovery, never a publication rerun.
 Applications consuming that version use Maven Central and:
 
 ```kotlin
@@ -262,10 +269,10 @@ Independent
 session object-candidate validation is retained, without import or root export.
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
-credential-free validation and the protected release-environment approval gate.
+credential-free validation, settings prerequisites and the separate activation boundary.
 The [J1.1 namespace migration report](review/J1_1_NAMESPACE_MIGRATION_REPORT.md)
 records the namespace migration and supersedes J1 coordinates. The v0.1.1
 preparation validation is recorded in the
 [release-preparation report](review/V0_1_1_RELEASE_PREPARATION_REPORT.md), with
 [release notes](review/V0_1_1_RELEASE_NOTES.md).
-Publication checks additionally require Python 3.9+ (standard library only).
+Publication checks use the independently compiled Java verifier; Gradle never compiles that tool.

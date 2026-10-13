@@ -4,20 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact VERSION to release (for example, 0.2.0)
+        description: Exact reviewed VERSION
         required: true
         type: string
       commit:
-        description: Full 40-character lowercase SHA of the reviewed current main commit
+        description: Exact lowercase 40-character reviewed source SHA
         required: true
         type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: release
-  cancel-in-progress: false
 
 defaults:
   run:
@@ -28,139 +24,204 @@ env:
   REQUESTED_COMMIT: ${{ inputs.commit }}
   DISPATCH_REF: ${{ github.ref }}
   DISPATCH_SHA: ${{ github.sha }}
-  # Keep Gradle configuration/daemon state away from signing secrets.
   GRADLE_OPTS: -Dorg.gradle.configuration-cache=false -Dorg.gradle.daemon=false
+
+concurrency:
+  group: release-publish-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
   preflight:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.inputs.outputs.version }}
       commit: ${{ steps.inputs.outputs.commit }}
       inventory: ${{ steps.inventory.outputs.inventory }}
     steps:
-      # Validate before checkout uses the operator-supplied ref.
-      - name: Validate dispatch inputs
+      - name: Validate bounded inputs before checkout
         id: inputs
         run: |
-          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]] || { echo 'Invalid release version'; exit 1; }
-          [[ "${REQUESTED_VERSION^^}" != *-SNAPSHOT ]] || { echo 'A release cannot be a SNAPSHOT'; exit 1; }
-          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'commit must be exactly 40 lowercase hexadecimal characters'; exit 1; }
-          [[ "$DISPATCH_REF" == refs/heads/main ]] || { echo 'Dispatch must select main'; exit 1; }
-          [[ "$DISPATCH_SHA" == "$REQUESTED_COMMIT" ]] || { echo 'Dispatch SHA differs from reviewed commit'; exit 1; }
+          test "${#REQUESTED_VERSION}" -le 128
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]]
+          [[ "${REQUESTED_VERSION^^}" != *-SNAPSHOT ]]
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$DISPATCH_REF" = refs/heads/main
+          test "$DISPATCH_SHA" = "$REQUESTED_COMMIT"
           printf 'version=%s\ncommit=%s\n' "$REQUESTED_VERSION" "$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
-      - name: Checkout reviewed commit
+      - name: Checkout exact reviewed source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.inputs.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify identity, reviewed notes and release absence
+      - name: Authenticate checkout before executing its tooling
+        run: |
+          test "$GITHUB_REPOSITORY" = totipo-org/totipo-java
+          test "$(git --no-replace-objects rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          printf '%s\n' "$REQUESTED_VERSION" | cmp - VERSION
+          test -z "$(git status --porcelain --untracked-files=all)"
+          export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c core.hooksPath=/dev/null -c http.followRedirects=false fetch \
+            --no-tags --no-recurse-submodules -- https://github.com/totipo-org/totipo-java.git \
+            +refs/heads/main:refs/remotes/release/main
+          git merge-base --is-ancestor "$REQUESTED_COMMIT" refs/remotes/release/main
+      - name: Acquire reviewed Nix installer without executing it
+        run: |
+          ! command -v nix
+          test ! -e /nix/var/nix/profiles/default/bin/nix
+          curl --fail --silent --show-error --proto '=https' --max-time 60 \
+            https://releases.nixos.org/nix/nix-2.35.2/install -o "$RUNNER_TEMP/nix-install"
+          printf '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  %s\n' "$RUNNER_TEMP/nix-install" | sha256sum -c -
+      - name: Install reviewed Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: file://${{ runner.temp }}/nix-install
+          enable_kvm: false
+          extra_nix_config: |
+            accept-flake-config = true
+            access-tokens =
+      - name: Remove bootstrap token configuration and build pinned runtime without credentials
+        run: |
+          test "$(nix --version)" = 'nix (Nix) 2.35.2'
+          # The pinned composite action supplies github.token internally. Remove
+          # every token declaration before any flake evaluation/build, including daemon config.
+          sudo sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' /etc/nix/nix.conf
+          if test -f "$HOME/.config/nix/nix.conf"; then
+            sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' "$HOME/.config/nix/nix.conf"
+          fi
+          sudo systemctl restart nix-daemon.service
+          unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES
+          for key in ${!ORG_GRADLE_PROJECT_@}; do unset "$key"; done
+          test -z "$(nix config show access-tokens)"
+          nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
+          runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
+          printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
+      - name: Verify wrapper and actual workflow guardrails
+        run: |
+          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          totipo-java-tool release workflow-pins "$PWD"
+      - name: Check initial source and release eligibility
         env:
           GH_TOKEN: ${{ github.token }}
+        run: totipo-java-tool release initial "$PWD"
+      - name: Exact-source hermetic qualification
+        run: nix flake check --no-update-lock-file --no-write-lock-file --print-build-logs
+      - name: Normal and independent forced offline release qualification
         run: |
-          python3 publishing/release.py identity
-          python3 -B publishing/release.py prepare "$REQUESTED_VERSION" --check
-      - name: Check immutable Central coordinates
-        run: python3 publishing/release.py state
-      - name: Set up JDK 25
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "25"
-      - name: Verify Gradle wrapper JAR
-        run: |
-          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-      - name: Check release guardrail failure paths
-        run: python3 -B -m unittest discover -s publishing -p 'test_*.py'
-      - name: Full normal and forced offline release gates
-        run: |
-          ./gradlew clean test build verifyPublication consumerSmoke
-          python3 publishing/release.py tests
-          cp build/publication-manifest.json "$RUNNER_TEMP/normal-publication-manifest.json"
-          ./gradlew --offline --no-daemon --no-build-cache --rerun-tasks clean test build verifyPublication consumerSmoke
-          python3 publishing/release.py tests
-          export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-publication-manifest.json")"
-          python3 publishing/release.py compare
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
+          totipo-java-tool release test-results "$PWD"
+          cp -r core/build/test-results "$RUNNER_TEMP/normal-core-results"
+          cp -r storage-nio/build/test-results "$RUNNER_TEMP/normal-storage-results"
+          cp build/publication-manifest.json "$RUNNER_TEMP/normal-manifest.json"
+          ./gradlew --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
+          totipo-java-tool release test-results "$PWD"
+          cp -r core/build/test-results "$RUNNER_TEMP/offline-core-results"
+          cp -r storage-nio/build/test-results "$RUNNER_TEMP/offline-storage-results"
+          export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-manifest.json")"
+          totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
           ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
-      - name: Focused spec and profile integrity
+      - name: Focused snapshot and profile accounting
         run: |
           ./gradlew :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest --tests org.totipo.conformance.R19ProfileIntegrityTest
-          python3 publishing/release.py focused-tests
+          totipo-java-tool release focused-test-results "$PWD"
           (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
           git diff --check
-          git status --short
           test -z "$(git status --porcelain --untracked-files=all)"
-      - name: Record verified unsigned artifact inventory
+      - name: Record independently accepted ten-artifact inventory
         id: inventory
-        run: python3 publishing/release.py inventory
+        run: |
+          inventory="$(totipo-java-tool release inventory "$PWD" "$PWD/build/repository")"
+          printf 'inventory=%s\n' "$inventory" >> "$GITHUB_OUTPUT"
 
   publish-central:
+    # J4B ACTIVATION GUARD: only a separately reviewed source change may enable mutation.
+    if: ${{ false && github.run_attempt == 1 }}
     needs: preflight
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    # Administrator must configure protection/reviewers and main-only deployment.
+    timeout-minutes: 90
+    permissions:
+      contents: write
     environment: release
     env:
       EXPECTED_INVENTORY: ${{ needs.preflight.outputs.inventory }}
     steps:
-      - name: Check required environment secrets
-        env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+      - name: Validate bounded inputs before checkout
+        id: inputs
         run: |
-          test -n "$ORG_GRADLE_PROJECT_mavenCentralUsername" || { echo 'Missing required environment secret: MAVEN_CENTRAL_USERNAME'; exit 1; }
-          test -n "$ORG_GRADLE_PROJECT_mavenCentralPassword" || { echo 'Missing required environment secret: MAVEN_CENTRAL_PASSWORD'; exit 1; }
-          test -n "$ORG_GRADLE_PROJECT_signingInMemoryKey" || { echo 'Missing required environment secret: SIGNING_IN_MEMORY_KEY'; exit 1; }
-      - name: Checkout validated commit
+          test "${#REQUESTED_VERSION}" -le 128
+          [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*)?$ ]]
+          [[ "${REQUESTED_VERSION^^}" != *-SNAPSHOT ]]
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$DISPATCH_REF" = refs/heads/main
+          printf 'version=%s\ncommit=%s\n' "$REQUESTED_VERSION" "$REQUESTED_COMMIT" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact reviewed source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.preflight.outputs.commit }}
+          ref: ${{ steps.inputs.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Inspect signing key requirements without importing it
-        env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
-        run: python3 publishing/release.py secrets
-      - name: Revalidate after environment approval
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 publishing/release.py identity
-      - name: Detect same-run partial publication
-        id: central
-        run: python3 publishing/release.py state
-      - name: Set up JDK 25
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - name: Authenticate checkout before executing its tooling
+        run: |
+          test "$GITHUB_REPOSITORY" = totipo-org/totipo-java
+          test "$(git --no-replace-objects rev-parse HEAD)" = "$REQUESTED_COMMIT"
+          printf '%s\n' "$REQUESTED_VERSION" | cmp - VERSION
+          test -z "$(git status --porcelain --untracked-files=all)"
+          export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_NO_REPLACE_OBJECTS=1 GIT_TERMINAL_PROMPT=0
+          git -c credential.helper= -c core.hooksPath=/dev/null -c http.followRedirects=false fetch \
+            --no-tags --no-recurse-submodules -- https://github.com/totipo-org/totipo-java.git \
+            +refs/heads/main:refs/remotes/release/main
+          git merge-base --is-ancestor "$REQUESTED_COMMIT" refs/remotes/release/main
+      - name: Acquire reviewed Nix installer without executing it
+        run: |
+          ! command -v nix
+          test ! -e /nix/var/nix/profiles/default/bin/nix
+          curl --fail --silent --show-error --proto '=https' --max-time 60 \
+            https://releases.nixos.org/nix/nix-2.35.2/install -o "$RUNNER_TEMP/nix-install"
+          printf '9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c  %s\n' "$RUNNER_TEMP/nix-install" | sha256sum -c -
+      - name: Install reviewed Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
-          distribution: temurin
-          java-version: "25"
-      - name: Verify Gradle wrapper JAR
+          install_url: file://${{ runner.temp }}/nix-install
+          enable_kvm: false
+          extra_nix_config: |
+            accept-flake-config = true
+            access-tokens =
+      - name: Remove bootstrap token configuration and build pinned runtime without credentials
         run: |
-          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-      - name: Rebuild and compare unsigned artifacts
+          test "$(nix --version)" = 'nix (Nix) 2.35.2'
+          # The pinned composite action supplies github.token internally. Remove
+          # every token declaration before any flake evaluation/build, including daemon config.
+          sudo sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' /etc/nix/nix.conf
+          if test -f "$HOME/.config/nix/nix.conf"; then
+            sed -i '/^[[:space:]]*access-tokens[[:space:]]*=/d' "$HOME/.config/nix/nix.conf"
+          fi
+          sudo systemctl restart nix-daemon.service
+          unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES
+          for key in ${!ORG_GRADLE_PROJECT_@}; do unset "$key"; done
+          test -z "$(nix config show access-tokens)"
+          nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
+          runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
+          printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
+      - name: Verify wrapper and actual workflow guardrails
         run: |
-          ./gradlew --no-daemon --no-build-cache clean verifyPublication
-          python3 publishing/release.py compare
-      - name: Signing preflight before upload
-        if: steps.central.outputs.mode == 'publish'
+          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          totipo-java-tool release workflow-pins "$PWD"
+      - name: Independently rebuild and authenticate publication inputs without secrets
         env:
-          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
-          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_IN_MEMORY_KEY_ID }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyId" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyId; fi
-          if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyPassword" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyPassword; fi
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
-          python3 publishing/release.py signed
-      - name: Publish and release to Maven Central
-        if: steps.central.outputs.mode == 'publish'
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          totipo-java-tool release eligible "$PWD"
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
+          totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+      - name: Reserve first-time tag then sign, bind inputs and publish once
         env:
           GH_TOKEN: ${{ github.token }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -169,70 +230,26 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_IN_MEMORY_KEY_ID }}
         run: |
-          # Check main/tag/Central again immediately before crossing the boundary.
-          python3 publishing/release.py identity
-          python3 publishing/release.py upload-ready
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test -n "$ORG_GRADLE_PROJECT_mavenCentralUsername"
+          test -n "$ORG_GRADLE_PROJECT_mavenCentralPassword"
+          test -n "$ORG_GRADLE_PROJECT_signingInMemoryKey"
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyId" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyId; fi
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyPassword" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyPassword; fi
+          totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+          totipo-java-tool release reserve "$PWD"
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
+          totipo-java-tool release tagged "$PWD"
+          totipo-java-tool release signed "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+          # Freeze accepted producer/signing tasks; the Gradle publication boundary rechecks all inputs.
+          export ORG_GRADLE_PROJECT_centralUpload=true
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true publishAndReleaseToMavenCentral
 
-  verify-central:
+  call-verification:
     needs: [preflight, publish-central]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 65
-    env:
-      EXPECTED_INVENTORY: ${{ needs.preflight.outputs.inventory }}
-    steps:
-      - name: Checkout validated commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check exact source identity
-        run: |
-          python3 publishing/release.py inputs
-          test "$(git rev-parse HEAD)" = "$REQUESTED_COMMIT"
-          test "$(cat VERSION)" = "$REQUESTED_VERSION"
-      - name: Set up JDK 25
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: "25"
-      - name: Verify Gradle wrapper JAR
-        run: |
-          python3 -B nix/verify-wrapper.py gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-      - name: Fresh unsigned staging and exact remote verification
-        run: |
-          ./gradlew --no-daemon --no-build-cache clean verifyPublication
-          python3 publishing/release.py remote
-      - name: Fresh Central-only module and POM consumers
-        run: |
-          for mode in module pom; do
-            consumer_home="$(mktemp -d "$RUNNER_TEMP/totipo-central-$mode.XXXXXX")"
-            extra=()
-            if [[ "$mode" == pom ]]; then extra=(-PpomOnly); fi
-            GRADLE_USER_HOME="$consumer_home" ./gradlew -p publishing/consumer-smoke \
-              --no-daemon --no-build-cache -PremoteCentral "${extra[@]}" clean check
-            rm -rf "$consumer_home"
-          done
-          git diff --check
-          test -z "$(git status --porcelain --untracked-files=all)"
-
-  tag-and-github-release:
-    needs: [preflight, verify-central]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
     permissions:
       contents: write
-    steps:
-      - name: Checkout validated commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.preflight.outputs.commit }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Annotated source tag then GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 publishing/release.py tag-release
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      version: ${{ needs.preflight.outputs.version }}
+      commit: ${{ needs.preflight.outputs.commit }}

@@ -1,55 +1,71 @@
 package org.totipo.tooling.release;
 
 import java.io.IOException;
-import java.util.HashMap;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Map;
 import static org.totipo.tooling.release.SourceFiles.require;
 
-/** Read-only identity observations; no repair, tag creation, or release authorization. */
-public record SourceIdentity(ReleaseInputs reviewed, String head, String remoteMain,
-                             Tag localTag, Tag remoteTag, RemoteReleaseState.ReleaseRecord release) {
-    public record Tag(boolean present, String object, String commit, boolean annotated) {
-        static Tag absent() { return new Tag(false, null, null, false); }
-    }
-    public static Tag remoteTag(String text, String version) throws IOException {
-        if (text.isEmpty()) return Tag.absent();
-        String ref = "refs/tags/v" + version;
-        var refs = new HashMap<String, String>();
-        for (String line : text.split("\n", -1)) {
-            String[] fields = line.split("\\s+");
-            require(fields.length == 2 && fields[0].matches("[0-9a-f]{40}")
-                    && (fields[1].equals(ref) || fields[1].equals(ref + "^{}")), "Malformed remote tag observation");
-            require(refs.putIfAbsent(fields[1], fields[0]) == null, "Duplicate/conflicting remote tag observation");
+/** Reviewed source and inspected annotated tags; a matching existing tag never authorizes upload. */
+public final class SourceIdentity {
+    private SourceIdentity() {}
+    public record Tag(String object, String commit, String annotation) {}
+    public static void source(SourceFiles source, ReleaseInputs inputs) throws IOException {
+        require(Arrays.equals(source.read("VERSION", 256), (inputs.version() + "\n").getBytes(StandardCharsets.US_ASCII)), "Exact VERSION/LF mismatch");
+        source.integrity(); source.notes(inputs.version(), true, true);
+        for (String path : new String[]{"README.md", "API_DESIGN.md"}) {
+            String text = source.text(path), start = "<!-- prepared-release:start -->", end = "<!-- prepared-release:end -->";
+            int first = text.indexOf(start), last = text.indexOf(end);
+            require(first >= 0 && last > first && text.indexOf(start, first + 1) < 0 && text.indexOf(end, last + 1) < 0,
+                "Ambiguous release source metadata");
+            String status = text.substring(first + start.length(), last);
+            require(status.equals("\nJava " + inputs.version() + " is released. See RELEASE_CHECKLIST.md.\n")
+                || status.equals("\nJava " + inputs.version() + " is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n"),
+                "Release source metadata version mismatch");
         }
-        require(refs.containsKey(ref), "Peeled tag lacks tag object");
-        return new Tag(true, refs.get(ref), refs.getOrDefault(ref + "^{}", refs.get(ref)), refs.containsKey(ref + "^{}"));
-    }
-    public static SourceIdentity inspect(SourceFiles source, ReleaseInputs inputs, GitQueries git,
-                                         RemoteReleaseState.GitHub github, boolean allowExistingTag) throws IOException {
-        String version = inputs.version(), commit = inputs.commit();
-        String head = git.query(GitQueries.Query.HEAD, version);
-        require(head.equals(commit), "Checkout differs from reviewed commit");
-        require(source.text("VERSION").equals(version + "\n"), "VERSION differs from requested version");
-        require(git.query(GitQueries.Query.STATUS, version).isEmpty(), "Checkout must be clean");
-        source.spec(); source.notes(version, false, false);
-        // Explicit fresh remote observation, never a cached refs/remotes value and never fetch.
-        String main = git.query(GitQueries.Query.REMOTE_MAIN, version);
-        require(main.equals(commit), "Current origin/main differs from reviewed commit or is unavailable");
-        Tag remote = remoteTag(git.query(GitQueries.Query.REMOTE_TAG, version), version);
-        String local = git.query(GitQueries.Query.LOCAL_TAG, version);
-        require(local.isEmpty() || local.equals("v" + version), "Malformed local tag observation");
-        Tag localTag = Tag.absent();
-        if (!local.isEmpty()) {
-            if (!allowExistingTag) throw new IOException("Release tag already exists");
-            String target = git.query(GitQueries.Query.LOCAL_TAG_COMMIT, version);
-            require(target.equals(commit), "Local tag points elsewhere; never move it");
-            String type = git.query(GitQueries.Query.LOCAL_TAG_TYPE, version);
-            require(type.equals("tag") || type.equals("commit"), "Invalid local tag object type");
-            localTag = new Tag(true, null, target, type.equals("tag"));
+        String lock = source.text("publishing/consumer-smoke/gradle.lockfile");
+        for (String module : new String[]{"core", "storage-nio"}) {
+            String prefix = "org.totipo:totipo-" + module + ":";
+            var entries = lock.lines().filter(line -> line.startsWith(prefix)).toList();
+            require(entries.equals(java.util.List.of(prefix + inputs.version()
+                + "=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath")), "Consumer source/version lock mismatch");
         }
-        if (allowExistingTag) require(!remote.present() || remote.commit().equals(commit), "Remote tag points elsewhere; never move it");
-        else require(!remote.present(), "Release tag already exists");
-        var release = github.release(version);
-        if (!allowExistingTag) require(release.presence() == RemoteReleaseState.Presence.ABSENT, "GitHub release already exists");
-        return new SourceIdentity(inputs, head, main, localTag, remote, release);
+    }
+    public static Tag tag(FinalizationProcesses.Api api, ReleaseInputs inputs) throws IOException {
+        var ref = api.request("GET", "/git/ref/tags/v" + inputs.version(), null);
+        require(ref.status() == 200, "Release tag absent or uncertain");
+        var object = RemoteReleaseState.object(ref.body());
+        require(("refs/tags/v" + inputs.version()).equals(object.get("ref")), "Wrong tag reference");
+        var target = RemoteReleaseState.member(object, "object");
+        require("tag".equals(target.get("type")), "Annotated tag required");
+        String sha = RemoteReleaseState.sha(target.get("sha"));
+        var response = api.request("GET", "/git/tags/" + sha, null);
+        require(response.status() == 200, "Tag object unavailable");
+        var tag = RemoteReleaseState.object(response.body());
+        var commit = RemoteReleaseState.member(tag, "object");
+        require(sha.equals(tag.get("sha")) && ("v" + inputs.version()).equals(tag.get("tag"))
+            && "commit".equals(commit.get("type")) && inputs.commit().equals(commit.get("sha"))
+            && ("totipo-java " + inputs.version() + "\n").equals(tag.get("message")), "Incorrect annotated tag identity");
+        return new Tag(sha, inputs.commit(), (String) tag.get("message"));
+    }
+    public static void absent(FinalizationProcesses.Api api, ReleaseInputs inputs) throws IOException {
+        require(api.request("GET", "/git/ref/tags/v" + inputs.version(), null).status() == 404, "Version is already reserved or uncertain");
+        require(api.request("GET", "/releases/tags/v" + inputs.version(), null).status() == 404, "GitHub Release exists or uncertain");
+    }
+    /** Successful completion is local to this process/job. No portable reservation receipt. */
+    public static void reserve(FinalizationProcesses.Api api, ReleaseInputs inputs, String attempt) throws IOException {
+        require("1".equals(attempt), "Publishing reruns prohibited");
+        absent(api, inputs);
+        var created = api.request("POST", "/git/tags", Map.of("tag", "v" + inputs.version(),
+            "message", "totipo-java " + inputs.version() + "\n", "object", inputs.commit(), "type", "commit",
+            "tagger", Map.of("name", "github-actions[bot]", "email", "41898282+github-actions[bot]@users.noreply.github.com")));
+        require(created.status() == 201, "Tag-object creation failed or uncertain; stop");
+        String object = RemoteReleaseState.sha(RemoteReleaseState.object(created.body()).get("sha"));
+        var reserved = api.request("POST", "/git/refs", Map.of("ref", "refs/tags/v" + inputs.version(), "sha", object));
+        require(reserved.status() == 201, "First-time reference creation failed or uncertain; stop");
+        var ref = RemoteReleaseState.object(reserved.body());
+        require(("refs/tags/v" + inputs.version()).equals(ref.get("ref"))
+            && object.equals(RemoteReleaseState.member(ref, "object").get("sha")), "Ambiguous reference creation; stop");
+        require(tag(api, inputs).object().equals(object), "Tag readback mismatch; stop");
     }
 }

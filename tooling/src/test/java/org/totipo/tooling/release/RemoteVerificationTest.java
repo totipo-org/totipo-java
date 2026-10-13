@@ -11,7 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Flow;
-import org.totipo.tooling.publication.AcceptedFixture;
+import org.totipo.tooling.publication.PublicationTest;
 import static org.totipo.tooling.release.ReleaseTest.*;
 import static org.totipo.tooling.release.RemoteArtifactVerifier.*;
 
@@ -156,7 +156,7 @@ public final class RemoteVerificationTest {
     }
     public static void main(String[] args) throws Exception {
         Path root = Files.createTempDirectory("totipo-remote-fixture-");
-        try { AcceptedFixture.create(root); polling(root); acquisition(); System.out.println("RemoteVerificationTest PASS"); }
+        try { PublicationTest.acceptedFixture(root); polling(root); acquisition(); System.out.println("RemoteVerificationTest PASS"); }
         finally { try (var paths = Files.walk(root)) { for (Path p : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(p); } }
     }
 }

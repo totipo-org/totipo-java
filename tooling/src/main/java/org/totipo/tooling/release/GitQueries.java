@@ -1,52 +1,54 @@
 package org.totipo.tooling.release;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import static org.totipo.tooling.release.SourceFiles.require;
 
-/** Closed command vocabulary. Remote evidence is injected; no fetch is permitted. */
-@FunctionalInterface
-public interface GitQueries {
-    enum Query { BRANCH, STATUS, HEAD, REMOTE_MAIN, LOCAL_TAG, LOCAL_TAG_COMMIT, LOCAL_TAG_TYPE, REMOTE_TAG }
-    String query(Query query, String version) throws IOException;
-
-    /** Only local read queries. Unexpected/remote commands fail rather than fall back. */
-    static GitQueries local(Path root) {
-        return (query, version) -> {
-            List<String> args = switch (query) {
-                case BRANCH -> List.of("branch", "--show-current");
-                case STATUS -> List.of("status", "--porcelain", "--untracked-files=all");
-                case HEAD -> List.of("rev-parse", "HEAD");
-                case LOCAL_TAG -> List.of("tag", "--list", "v" + version);
-                case LOCAL_TAG_TYPE -> List.of("cat-file", "-t", "refs/tags/v" + version);
-                case LOCAL_TAG_COMMIT -> List.of("rev-parse", "refs/tags/v" + version + "^{commit}");
-                case REMOTE_MAIN, REMOTE_TAG -> throw new IOException("Fresh remote Git evidence must be injected");
+/** Fixed canonical acquisition and local identity reads. No tag mutation. */
+public final class GitQueries {
+    public static final String REPOSITORY = "totipo-org/totipo-java";
+    private final Path root, executable;
+    public GitQueries(Path root, Path executable) throws IOException {
+        new SourceFiles(root);
+        require(executable.isAbsolute(), "Explicit Git executable required");
+        this.root = root; this.executable = executable;
+    }
+    String run(String... args) throws IOException {
+        var command = new java.util.ArrayList<>(List.of(executable.toString(), "--no-optional-locks",
+            "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.hooksPath=/dev/null",
+            "-c", "credential.helper=", "-c", "core.askPass=", "-c", "http.followRedirects=false"));
+        command.addAll(List.of(args));
+        var environment = new java.util.HashMap<>(Map.of("GIT_NO_REPLACE_OBJECTS", "1",
+            "GIT_CONFIG_NOSYSTEM", "1", "GIT_CONFIG_GLOBAL", "/dev/null", "GIT_TERMINAL_PROMPT", "0",
+            "GIT_ALLOW_PROTOCOL", "https"));
+        String certificate = System.getenv("SSL_CERT_FILE");
+        if (certificate != null) environment.put("GIT_SSL_CAINFO", certificate);
+        return FinalizationProcesses.run(root, command, environment, new byte[0], Duration.ofSeconds(60));
+    }
+    public void source(ReleaseInputs inputs) throws IOException {
+        String config = run("config", "--local", "--null", "--list");
+        for (String entry : config.split("\0")) {
+            int split = entry.indexOf('\n'); require(split > 0, "Malformed Git configuration");
+            String key = entry.substring(0, split), value = entry.substring(split + 1);
+            boolean safe = switch (key) {
+                case "core.repositoryformatversion" -> value.equals("0");
+                case "core.filemode", "core.logallrefupdates" -> value.equals("true") || value.equals("false");
+                case "core.bare" -> value.equals("false");
+                case "remote.origin.url" -> value.equals("https://github.com/" + REPOSITORY) || value.equals("https://github.com/" + REPOSITORY + ".git");
+                case "remote.origin.fetch" -> value.equals("+refs/heads/*:refs/remotes/origin/*");
+                default -> false;
             };
-            SourceFiles.require(ReleaseInputs.validVersion(version), "Invalid version for Git query");
-            var command = new java.util.ArrayList<>(List.of("git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.hooksPath=/dev/null"));
-            command.addAll(args);
-            var builder = new ProcessBuilder(command).directory(root.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD);
-            // Do not inherit user-supplied Git environment redirection or executable hooks.
-            builder.environment().keySet().removeIf(k -> k.startsWith("GIT_"));
-            builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
-            builder.environment().put("GIT_CONFIG_GLOBAL", "/dev/null");
-            var process = builder.start();
-            try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
-                var output = executor.submit(() -> process.getInputStream().readNBytes(1_048_577));
-                try {
-                    SourceFiles.require(process.waitFor(Duration.ofSeconds(20).toMillis(), TimeUnit.MILLISECONDS), "Git query deadline exceeded");
-                    byte[] bytes = output.get(1, TimeUnit.SECONDS);
-                    SourceFiles.require(process.exitValue() == 0 && bytes.length <= 1_048_576, "Git query failed or output limit exceeded");
-                    return StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString().strip();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt(); throw new IOException("Git query interrupted");
-                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
-                    throw new IOException("Git query failed");
-                } finally { process.destroyForcibly(); }
-            }
-        };
+            require(safe, "Unreviewed Git configuration");
+        }
+        require(run("rev-parse", "HEAD").strip().equals(inputs.commit()), "Checkout differs from reviewed commit");
+        require(run("status", "--porcelain", "--untracked-files=all").isEmpty(), "Checkout must be clean");
+        run("fetch", "--no-tags", "--no-recurse-submodules", "--", "https://github.com/" + REPOSITORY + ".git",
+            "+refs/heads/main:refs/remotes/release/main");
+        String main = run("rev-parse", "--verify", "refs/remotes/release/main").strip();
+        require(main.matches("[0-9a-f]{40}"), "Invalid fresh main identity");
+        run("merge-base", "--is-ancestor", inputs.commit(), main);
     }
 }

@@ -47,7 +47,7 @@ Only confirmed excluded reports may be finalized afterward.
 
 Never trade final qualification coverage for faster iteration.
 Optimize by moving expensive checks to stable boundaries, not by deleting them.
-Unit/API tests, publication verification, independent consumers, Python release
+Unit/API tests, publication verification, independent consumers, standalone Java release
 guardrails, fixed/offline Nix qualification and release-only reproducibility are
 distinct evidence layers. Do not run every layer after every edit.
 
@@ -62,7 +62,7 @@ before selecting validation. Record every applicable classification:
 | `PUBLIC_API` | Public contracts/signatures; affected module/API tests. |
 | `PUBLICATION_METADATA` | Maven metadata or packaged contents; `verifyPublication`. |
 | `CONSUMER_BOUNDARY` | Independent consumption/resolution; `consumerSmoke` and affected POM-only checks. |
-| `RELEASE_TOOLING` | Release helpers/guardrails; specific Python unit tests. |
+| `RELEASE_TOOLING` | Release helpers/guardrails; focused standalone Java tests. |
 | `DEPENDENCY_BUILD` | Dependency inputs, Gradle/build configuration or fixed cache; focused resolution/build work. |
 | `RELEASE_PREPARATION` | Explicit release-source preparation; routine qualification plus the separate mandatory release reproducibility procedure. |
 
@@ -86,11 +86,11 @@ Iterate with the affected module/API or helper, for example:
 ./gradlew :storage-nio:test --tests 'fully.qualified.TestClass'
 ./gradlew verifyPublication
 ./gradlew consumerSmoke
-python3 -B -m unittest discover -s publishing -p 'test_release.py' -k test_exact_inputs
+java -cp "$TOTIPO_TOOLING_TEST_CLASSPATH" org.totipo.tooling.release.ReleaseTest "$PWD"
 ```
 
 Select the relevant command, not the entire list. Do not run
-`clean test build verifyPublication consumerSmoke`, full Python guardrails or
+`clean test build verifyPublication consumerSmoke`, full standalone tooling guardrails or
 Nix after every edit. `consumerSmoke` already depends on `verifyPublication`;
 its standalone consumer uses its existing isolated, forced-offline task options.
 Do not weaken those options to accelerate iteration.
@@ -99,7 +99,7 @@ Diagnose broad failures narrowly. Preserve failing XML, logs and inventories
 outside build outputs before `clean` or another test run replaces them. Once a
 focused reproduction is stable, rerun the affected broad gate. Do not repeatedly
 destroy test XML/build outputs with unrelated focused/full runs; preserve the
-evidence required by `publishing/release.py` accounting. Account for full-suite
+evidence required by `TestResults` accounting. Account for full-suite
 XML before focused tests overwrite it; focused XML is not full-suite evidence.
 
 ### Stable final normal Java gate
@@ -109,11 +109,20 @@ build changes affecting that boundary, run once when stable:
 
 ```sh
 ./gradlew test build javadoc verifyPublication consumerSmoke
-python3 -B publishing/release.py tests
-python3 -B -m unittest discover -s publishing -p 'test_*.py'
-python3 -B publishing/publication.py check
+"$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
+"$TOTIPO_PUBLICATION_TOOL" release workflow-pins "$PWD"
+"$TOTIPO_PUBLICATION_TOOL" publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
 ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
+
+`TOTIPO_PUBLICATION_TOOL` must name the prebuilt standalone Java launcher (see
+RELEASE_CHECKLIST.md); Gradle must never compile the independent tooling.
+Tooling changes also require direct JDK 25 compilation and all permanent runners
+listed in `nix/tooling.nix`, with only pinned Jackson Core on the classpath, plus
+JDK-only wrapper tests. `TOTIPO_TOOLING_TEST_CLASSPATH` names those independently
+compiled test/main classes and Jackson. Nix runs these guardrails as a separate
+check/dependency. The workflow-pin check must inspect the full checkout because
+production qualification's source projection deliberately excludes `.github`.
 
 The manifest check rereads staged bytes and proves the repository is unchanged
 since `verifyPublication` accepted it; it does not repeat semantic verification.
@@ -122,8 +131,8 @@ exercises module metadata. Run full accounting immediately after the full Java
 suite, before any focused module tests. Preserve its evidence. The authoritative
 Nix suite additionally runs focused snapshot/profile integrity accounting and
 checks all snapshot hashes; those checks remain required there. For release
-helper-only changes, use the relevant Python baseline/focused tests and full
-Python guardrails at the stable boundary, then final Nix if included; Java
+helper-only changes, use the relevant standalone Java baseline/focused tests and full
+standalone tooling guardrails at the stable boundary, then final Nix if included; Java
 coverage is required if the change also affects Java/publication behavior.
 
 For pure docs/Javadocs without executable/build/publication behavior changes,
@@ -178,14 +187,14 @@ qualification authorizes no release action.
 | --- | --- |
 | Java executable/test/build change after final Java gate | Rerun the affected final Java gate; included inputs also invalidate Nix. |
 | Javadoc-only change | Rerun Javadoc and the source-Javadoc full gate policy above; included source invalidates Nix. |
-| Python release-helper change | Relevant Python tests and stable full guardrails; final Nix if included. |
+| Java release-tool change | Relevant standalone tests and stable full guardrails; final Nix if included. |
 | `qualification.nix`, Nix helper or `package-deps` change | Final Nix invalidated; affected Java/build/resolution checks as applicable. |
 | Report-only edit excluded from derivation | No Java rebuild or Nix rerun. |
 | Release-checklist prose | No artifact reproducibility rerun unless the release operation itself changed; inspect inclusion for Nix. |
 
 Reports must record starting HEAD, classifications, validation evidence and final
 Git state, plus invocation counts for baseline broad runs, focused Gradle tests,
-focused Python tests, final full Java gate, publication/consumer passes, separate
+focused standalone tooling tests, final full Java gate, publication/consumer passes, separate
 host offline passes with their independent purpose, and human Nix runs. Count
 invocations separately from task executions: note up-to-date tasks and nested
 publication/consumer dependencies rather than implying extra full suite runs.
@@ -204,3 +213,18 @@ lifecycle, publication/retry, or UI/client interaction with Java operations, rea
 Do not infer `newer VaultState == old work invalid` unless the relevant Java
 operation contract says so. Preserve the distinction between snapshot validity,
 application presentation relevance, and operation-specific freshness checks.
+
+## Release implementation and activation
+
+GitHub Actions owns release orchestration; standalone Java owns focused identity,
+artifact, tag-reservation and create-or-validate checks. Repository Python release
+tooling and migration oracles are removed. Do not recreate history-based upload
+recovery or a coordinator. At most one authorized Gradle Central invocation per
+version follows first-time annotated tag reservation; internal plugin HTTP retries
+are accepted without claiming exactly-once delivery. Existing tags prohibit ordinary
+republication. Use Verify Release for independently rerunnable verification.
+
+J4B's literal false guards on `release.yml`'s `publish-central` and
+`verify-release.yml`'s `finalize` jobs must remain disabled until a separate owner
+activation change. Routine qualification authorizes no live release mutation.
+See RELEASE_CHECKLIST.md for effective settings and exact activation prerequisites.

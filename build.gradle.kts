@@ -4,6 +4,10 @@ import org.gradle.api.tasks.javadoc.Javadoc
 import org.gradle.api.tasks.wrapper.Wrapper
 import org.gradle.external.javadoc.JavadocMemberLevel
 import org.gradle.external.javadoc.StandardJavadocDocletOptions
+import org.gradle.api.publish.maven.tasks.GenerateMavenPom
+import org.gradle.api.publish.tasks.GenerateModuleMetadata
+import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
+import org.gradle.plugins.signing.Sign
 
 plugins {
     base
@@ -19,12 +23,28 @@ require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)?\n
 }
 version = versionText.removeSuffix("\n")
 val centralRelease = providers.gradleProperty("centralRelease").map { it.toBooleanStrict() }.getOrElse(false)
+val centralUpload = providers.gradleProperty("centralUpload").map { it.toBooleanStrict() }.getOrElse(false)
+require(!centralUpload || centralRelease) { "Central upload requires explicit Central mode" }
 require(!centralRelease || gradle.startParameter.taskNames.none { it.substringAfterLast(':') == "publish" }) {
     "Use an explicit Central task with -PcentralRelease=true, never generic publish"
 }
 
+if (centralRelease) tasks.register<Exec>("verifyCentralSigningInputs") {
+    group = "verification"
+    dependsOn(":core:signMavenPublication", ":storage-nio:signMavenPublication")
+    val frozen = centralUpload
+    val executable = providers.gradleProperty("publicationTool")
+        .orElse(providers.environmentVariable("TOTIPO_PUBLICATION_TOOL")).getOrElse("__missing_totipo_publication_tool__")
+    commandLine(executable, "release", "signed", rootDir.absolutePath,
+        layout.buildDirectory.dir("repository").get().asFile.absolutePath,
+        layout.buildDirectory.file("publication-manifest.json").get().asFile.absolutePath)
+    doFirst {
+        check(frozen && executable != "__missing_totipo_publication_tool__") { "Signing-input acceptance failed: frozen inputs and standalone launcher required" }
+    }
+}
 
 subprojects {
+    val freezePublicationInputs = centralUpload
     apply(plugin = "java-library")
     group = "org.totipo"
     version = rootProject.version
@@ -91,6 +111,23 @@ subprojects {
         useJUnitPlatform()
     }
 
+    // The upload invocation must reuse the already accepted signing inputs. If any
+    // producer is scheduled again, skip it before it can replace those inputs.
+    // One shared check reauthenticates all ten originals before either module's
+    // Maven publisher copies signatures into its local Central staging tree.
+    tasks.configureEach {
+        if (this is JavaCompile || this is Javadoc || this is AbstractArchiveTask
+            || this is GenerateMavenPom || this is GenerateModuleMetadata || this is Sign) {
+            onlyIf("Accepted publication inputs must not rebuild during upload") { !freezePublicationInputs }
+        }
+    }
+    tasks.withType<PublishToMavenRepository>().configureEach {
+        if (name.endsWith("ToMavenCentralRepository")) {
+            dependsOn(rootProject.tasks.named("verifyCentralSigningInputs"))
+            doFirst { check(freezePublicationInputs) { "Central publication requires frozen accepted signing inputs" } }
+        }
+    }
+
     // Inspect every production class, so an accidental target increase fails `check`.
     val moduleName = project.name
     val mainClasses = extensions.getByType<JavaPluginExtension>().sourceSets.named("main").map { it.output.classesDirs }
@@ -132,11 +169,19 @@ tasks.named<Wrapper>("wrapper") {
     distributionSha256Sum = "bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c"
 }
 
-// Python standard library only; no extra build or runtime dependency resolution.
+// Prebuilt standalone verifier; compilation never depends on Gradle or production classes.
 tasks.register<Exec>("verifyPublication") {
     group = "verification"
     dependsOn(subprojects.map { "${it.path}:publishAllPublicationsToStagingRepository" })
-    commandLine("python3", "publishing/verify-publication.py")
+    val tool = providers.gradleProperty("publicationTool").orElse(providers.environmentVariable("TOTIPO_PUBLICATION_TOOL"))
+    val executable = tool.getOrElse("__missing_totipo_publication_tool__")
+    commandLine(executable, "publication", "verify", rootDir.absolutePath,
+        layout.buildDirectory.dir("repository").get().asFile.absolutePath,
+        layout.buildDirectory.file("publication-manifest.json").get().asFile.absolutePath,
+        layout.projectDirectory.file("publishing/consumer-smoke/gradle/verification-metadata.xml").asFile.absolutePath)
+    doFirst {
+        check(executable != "__missing_totipo_publication_tool__") { "Set TOTIPO_PUBLICATION_TOOL to the prebuilt standalone Java launcher (nix build .#tooling)" }
+    }
 }
 // Deliberately separate Gradle build, with no composite/source substitution.
 tasks.register<Exec>("consumerSmoke") {

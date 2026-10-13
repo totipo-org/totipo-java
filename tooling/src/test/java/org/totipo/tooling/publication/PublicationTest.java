@@ -19,8 +19,6 @@ public final class PublicationTest {
     private static final String URL = "https://github.com/totipo-org/totipo-java";
     private static final byte[] MANIFEST = bytes("Manifest-Version: 1.0\r\n\r\n");
     private static int assertions;
-    private static Path exports;
-    private static final List<String> cases = new ArrayList<>();
     private PublicationTest() {}
     @FunctionalInterface interface Action { void run() throws Exception; }
     @FunctionalInterface interface Mutation { void run(Path root) throws Exception; }
@@ -46,6 +44,11 @@ public final class PublicationTest {
     }
     private static Map<String, byte[]> archiveEntries(String name, byte[] data) {
         Map<String, byte[]> m = new LinkedHashMap<>(); m.put("META-INF/MANIFEST.MF", MANIFEST); m.put(name, data); return m;
+    }
+    public static void acceptedFixture(Path root) throws Exception {
+        fixture(root);
+        var accepted = PublicationVerifier.verify(root, root.resolve("build/repository"), "0.2.0");
+        Files.write(root.resolve("build/publication-manifest.json"), accepted.bytes());
     }
     static Path fixture(Path root) throws Exception {
         write(root.resolve("VERSION"), VERSION + "\n");
@@ -89,22 +92,21 @@ public final class PublicationTest {
         if (!original.contains(from)) throw new AssertionError("Fixture replacement missing: " + from);
         write(file, original.replace(from, to));
     }
-    private static void semantic(String name, boolean javaAccept, boolean pythonAccept, Mutation mutation) throws Exception {
-        Path root = exports == null ? Files.createTempDirectory("publication-fixture-") : exports.resolve(name);
+    private static void semantic(String name, boolean javaAccept, Mutation mutation) throws Exception {
+        Path root = Files.createTempDirectory("publication-fixture-" + name + "-");
         fixture(root); mutation.run(root);
         Action verify = () -> PublicationVerifier.verify(root, repo(root), VERSION);
         if (javaAccept) { verify.run(); assertions++; } else reject(verify);
-        if (exports != null) cases.add(name + "\t" + javaAccept + "\t" + pythonAccept);
-        else remove(root);
+        remove(root);
     }
     private static void pomCase(String name, String from, String to) throws Exception {
-        semantic(name, false, false, r -> replace(artifact(r, ".pom"), from, to));
+        semantic(name, false, r -> replace(artifact(r, ".pom"), from, to));
     }
     private static void moduleCase(String name, String from, String to) throws Exception {
-        semantic(name, false, false, r -> replace(artifact(r, ".module"), from, to));
+        semantic(name, false, r -> replace(artifact(r, ".module"), from, to));
     }
     private static void jarCase(String name, String suffix, Mutation mutation) throws Exception {
-        semantic(name, false, false, r -> {
+        semantic(name, false, r -> {
             mutation.run(r);
             // Refresh independent module assertions so archive checks, rather than stale hashes, reject.
             Path p = artifact(r, suffix); byte[] data = Files.readAllBytes(p);
@@ -128,16 +130,15 @@ public final class PublicationTest {
         try (var paths = Files.walk(root)) { for (Path p : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(p); }
     }
     public static void main(String[] args) throws Exception {
-        if (args.length > 1) throw new IllegalArgumentException("Optional fixture export directory");
-        if (args.length == 1) { exports = Path.of(args[0]); Files.createDirectories(exports); }
-        semantic("valid", true, true, r -> {});
-        semantic("missing-artifact", false, false, r -> Files.delete(artifact(r, ".pom")));
-        semantic("extra-artifact", false, false, r -> write(artifact(r, ".other"), "extra"));
-        semantic("bad-sidecar", false, false, r -> write(artifact(r, ".jar.sha256"), "0".repeat(64)));
-        semantic("bad-index-checksum", false, false, r -> write(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml.sha256"), "0".repeat(64)));
-        semantic("missing-index-version", false, false, r -> replace(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml"), "<version>0.2.0</version>", ""));
-        semantic("extra-index-version", false, false, r -> replace(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml"), "</versions>", "<version>0.3.0</version></versions>"));
-        semantic("extra-repository-file", false, false, r -> write(repo(r).resolve("unexpected"), "extra"));
+        if (args.length != 0) throw new IllegalArgumentException("Optional fixture export directory");
+        semantic("valid", true, r -> {});
+        semantic("missing-artifact", false, r -> Files.delete(artifact(r, ".pom")));
+        semantic("extra-artifact", false, r -> write(artifact(r, ".other"), "extra"));
+        semantic("bad-sidecar", false, r -> write(artifact(r, ".jar.sha256"), "0".repeat(64)));
+        semantic("bad-index-checksum", false, r -> write(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml.sha256"), "0".repeat(64)));
+        semantic("missing-index-version", false, r -> replace(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml"), "<version>0.2.0</version>", ""));
+        semantic("extra-index-version", false, r -> replace(artifact(r, ".jar").getParent().getParent().resolve("maven-metadata.xml"), "</versions>", "<version>0.3.0</version></versions>"));
+        semantic("extra-repository-file", false, r -> write(repo(r).resolve("unexpected"), "extra"));
         pomCase("pom-group", "<groupId>org.totipo", "<groupId>wrong");
         pomCase("pom-artifact", "<artifactId>totipo-core", "<artifactId>wrong");
         pomCase("pom-version", "<version>0.2.0", "<version>0.3.0");
@@ -149,16 +150,16 @@ public final class PublicationTest {
         pomCase("pom-license", "Apache License 2.0", "Other license");
         pomCase("pom-scm", "scm:git:ssh:", "wrong:");
         pomCase("pom-malformed", "</project>", "");
-        semantic("pom-external-entity", false, false, r -> {
+        semantic("pom-external-entity", false, r -> {
             replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY evil SYSTEM 'file:///nonexistent-totipo-j2b'>]><project");
             replace(artifact(r, ".pom"), "<description>fixture", "<description>&evil;");
         });
-        semantic("pom-network-entity", false, false, r -> {
+        semantic("pom-network-entity", false, r -> {
             replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY evil SYSTEM 'http://127.0.0.1:1/untrusted'>]><project");
             replace(artifact(r, ".pom"), "<description>fixture", "<description>&evil;");
         });
-        semantic("pom-nested-field", false, false, r -> replace(artifact(r, ".pom"), "<groupId>org.totipo</groupId>", "<groupId><nested>org.totipo</nested></groupId>"));
-        semantic("pom-internal-dtd-tightening", false, true, r -> replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY benign 'safe'>]><project"));
+        semantic("pom-nested-field", false, r -> replace(artifact(r, ".pom"), "<groupId>org.totipo</groupId>", "<groupId><nested>org.totipo</nested></groupId>"));
+        semantic("pom-internal-dtd-tightening", false, r -> replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY benign 'safe'>]><project"));
         moduleCase("module-component", "\"group\":\"org.totipo\"", "\"group\":\"wrong\"");
         moduleCase("module-format", "\"1.1\"", "\"1.2\"");
         moduleCase("module-missing-variant", "javadocElements", "other");
@@ -172,12 +173,12 @@ public final class PublicationTest {
         moduleCase("module-constraint", "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"dependencyConstraints\":[{}],\"attributes\":{\"org.gradle.jvm.version\":17}");
         moduleCase("module-available-at", "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"available-at\":{\"url\":\"other\"},\"attributes\":{\"org.gradle.jvm.version\":17}");
         moduleCase("module-project-path", "\"formatVersion\":", "\"leak\":\":core\",\"formatVersion\":");
-        semantic("module-duplicate-tightening", false, true, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"formatVersion\":\"bad\",\"formatVersion\":"));
-        semantic("module-utf16", false, false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).getBytes(StandardCharsets.UTF_16)));
-        semantic("module-bom", false, false, r -> write(artifact(r, ".module"), "\ufeff" + Files.readString(artifact(r, ".module"))));
-        semantic("module-invalid-utf8", false, false, r -> write(artifact(r, ".module"), new byte[] {(byte) 0xff}));
-        semantic("module-truncated", false, false, r -> write(artifact(r, ".module"), "{"));
-        semantic("module-oversized-tightening", false, true, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")) + " ".repeat(65_536)));
+        semantic("module-duplicate-tightening", false, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"formatVersion\":\"bad\",\"formatVersion\":"));
+        semantic("module-utf16", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).getBytes(StandardCharsets.UTF_16)));
+        semantic("module-bom", false, r -> write(artifact(r, ".module"), "\ufeff" + Files.readString(artifact(r, ".module"))));
+        semantic("module-invalid-utf8", false, r -> write(artifact(r, ".module"), new byte[] {(byte) 0xff}));
+        semantic("module-truncated", false, r -> write(artifact(r, ".module"), "{"));
+        semantic("module-oversized-tightening", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")) + " ".repeat(65_536)));
         jarCase("missing-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/A.class", null, true));
         jarCase("extra-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/B.class", new byte[8], false));
         jarCase("changed-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/A.class", new byte[8], false));
@@ -206,20 +207,20 @@ public final class PublicationTest {
             for (int i = 0; i <= b.length - from.length; i++) if (java.util.Arrays.equals(java.util.Arrays.copyOfRange(b, i, i + from.length), from)) System.arraycopy(to, 0, b, i, to.length);
             write(artifact(r, ".jar"), b);
         });
-        semantic("valid-sidecars", true, true, r -> {
+        semantic("valid-sidecars", true, r -> {
             byte[] binary = Files.readAllBytes(artifact(r, ".jar"));
             write(artifact(r, ".jar.sha256"), "\u00a0" + hash(binary) + "\u0085\n");
         });
-        semantic("module-integral-java-float-tightening", false, true, r -> replace(artifact(r, ".module"), "\"org.gradle.jvm.version\":17", "\"org.gradle.jvm.version\":17.0"));
-        semantic("module-integral-size-float-tightening", false, true, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).replaceAll("(\"size\":\\d+)", "$1.0")));
-        semantic("module-nan-tightening", false, true, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"unused\":NaN,\"formatVersion\":"));
-        semantic("module-capability-type-tightening", false, true, r -> replace(artifact(r, ".module"), "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"capabilities\":false,\"attributes\":{\"org.gradle.jvm.version\":17}"));
-        semantic("module-extra-variant-tightening", false, true, r -> {
+        semantic("module-integral-java-float-tightening", false, r -> replace(artifact(r, ".module"), "\"org.gradle.jvm.version\":17", "\"org.gradle.jvm.version\":17.0"));
+        semantic("module-integral-size-float-tightening", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).replaceAll("(\"size\":\\d+)", "$1.0")));
+        semantic("module-nan-tightening", false, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"unused\":NaN,\"formatVersion\":"));
+        semantic("module-capability-type-tightening", false, r -> replace(artifact(r, ".module"), "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"capabilities\":false,\"attributes\":{\"org.gradle.jvm.version\":17}"));
+        semantic("module-extra-variant-tightening", false, r -> {
             var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
             List<Object> variants = new ArrayList<>(Json.array(m.get("variants"))); variants.add(variants.getFirst());
             m.put("variants", variants); write(artifact(r, ".module"), Json.dumps(m, false));
         });
-        semantic("module-missing-checksum-tightening", false, true, r -> {
+        semantic("module-missing-checksum-tightening", false, r -> {
             var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
             for (Object variant : Json.array(m.get("variants"))) {
                 @SuppressWarnings("unchecked") Map<String, Object> v = (Map<String, Object>) variant;
@@ -227,7 +228,7 @@ public final class PublicationTest {
             }
             write(artifact(r, ".module"), Json.dumps(m, false));
         });
-        semantic("archive-manifest-tightening", false, true, r -> {
+        semantic("archive-manifest-tightening", false, r -> {
             mutateZip(artifact(r, ".jar"), "META-INF/MANIFEST.MF", bytes("Manifest-Version: 9.0\r\n\r\n"), false);
             var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
             for (Object variant : Json.array(m.get("variants"))) {
@@ -240,8 +241,7 @@ public final class PublicationTest {
             write(artifact(r, ".module"), Json.dumps(m, false));
         });
         manifestTests(); jsonCompatibility(); profileTests();
-        if (exports != null) Files.write(exports.resolve("cases.tsv"), cases, StandardCharsets.UTF_8);
-        System.out.println("Publication tests passed: " + assertions + " assertions; " + cases.size() + " exported semantic fixtures");
+        System.out.println("Publication tests passed: " + assertions + " assertions");
     }
     private static void manifestTests() throws Exception {
         Path root = fixture(Files.createTempDirectory("publication-manifest-test-"));
@@ -303,6 +303,15 @@ public final class PublicationTest {
             // Output failure after valid semantic checks must leave no accepted manifest.
             fixture(root); Files.createDirectory(metadata);
             reject(() -> PublicationCli.run(cli)); check(!Files.exists(manifest)); Files.delete(metadata);
+            Path integratedManifest = root.resolve("build/publication-manifest.json");
+            Path integratedMetadata = root.resolve("publishing/consumer-smoke/gradle/verification-metadata.xml");
+            check(!Files.exists(integratedMetadata.getParent()));
+            PublicationCli.run(new String[]{"verify", root.toString(), repo(root).toString(),
+                integratedManifest.toString(), integratedMetadata.toString()});
+            check(java.util.Arrays.equals(accepted.bytes(), Files.readAllBytes(integratedManifest)));
+            check(Files.isRegularFile(integratedMetadata));
+            reject(() -> PublicationCli.run(new String[]{"verify", root.toString(), repo(root).toString(),
+                root.resolve("unapproved.json").toString(), integratedMetadata.toString()}));
             Files.createSymbolicLink(artifact(root, ".pom.sha256"), output.resolve("outside"));
             reject(() -> PublicationVerifier.verify(root, repo(root), VERSION));
             Files.delete(artifact(root, ".pom.sha256"));
@@ -331,12 +340,10 @@ public final class PublicationTest {
         Path empty = Files.createTempDirectory("publication-empty-");
         try { check(PublicationRepository.fingerprint(empty).equals("44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a")); }
         finally { remove(empty); }
-        if (exports != null) {
-            Path fingerprintRepo = exports.resolve("fingerprint-repository");
+        Path fingerprintRepo = Files.createTempDirectory("publication-unicode-");
+        try {
             for (String name : List.of("a/é", "z\\quote\"", "😀", "\ue000", "control\nname")) write(fingerprintRepo.resolve(name), "fixture bytes");
-            write(exports.resolve("repository-fingerprint.sha256"), PublicationRepository.fingerprint(fingerprintRepo));
-            write(exports.resolve("fingerprint-encoding.json"), Json.dumps(values, false));
-            write(exports.resolve("fingerprint-encoding.sha256"), hash(bytes(Json.dumps(values, false))));
-        }
+            check(PublicationRepository.fingerprint(fingerprintRepo).equals("179293eb76c895b3c42ead499aaee22a8cf8f6cf2af73ea9e5f490b58a650963"));
+        } finally { remove(fingerprintRepo); }
     }
 }

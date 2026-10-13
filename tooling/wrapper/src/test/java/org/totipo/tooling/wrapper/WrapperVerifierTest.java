@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-/** Deterministic JDK-only fixtures; Python source pin audit; optional fourth argument retains parity evidence. */
+/** Deterministic JDK-only fixtures; independent canonical pin audit. */
 public final class WrapperVerifierTest {
     // Independent reviewed test pins, never obtained from the inputs being checked.
     private static final String JAR_SHA256 =
@@ -40,18 +40,18 @@ public final class WrapperVerifierTest {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3 || args.length > 4) {
-            throw new IllegalArgumentException("Expected canonical JAR, properties, Python source, optional evidence directory");
+        if (args.length < 2 || args.length > 3) {
+            throw new IllegalArgumentException("Expected canonical JAR, properties, optional evidence directory");
         }
-        Path root = args.length == 4 ? Files.createDirectories(Path.of(args[3]))
+        Path root = args.length == 3 ? Files.createDirectories(Path.of(args[2]))
                 : Files.createTempDirectory("wrapper-verifier-test-");
         try {
             var test = new WrapperVerifierTest(root, Path.of(args[0]), Path.of(args[1]));
-            test.identities(Path.of(args[2]));
+            test.identities();
             test.fixtures();
             test.run();
         } finally {
-            if (args.length == 3) {
+            if (args.length == 2) {
                 try (var paths = Files.walk(root)) {
                     for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
                         Files.delete(path);
@@ -70,8 +70,7 @@ public final class WrapperVerifierTest {
         fixtures.add(new Fixture(name, jar, properties, value.equals(original)));
     }
 
-    private void identities(Path pythonSource) throws Exception {
-        String python = Files.readString(pythonSource);
+    private void identities() throws Exception {
         for (String name : List.of("JAR_SHA256", "PROPERTIES_SHA256")) {
             String expected = name.equals("JAR_SHA256") ? JAR_SHA256 : PROPERTIES_SHA256;
             Path input = name.equals("JAR_SHA256") ? jar : root.resolve("identity.properties");
@@ -82,21 +81,11 @@ public final class WrapperVerifierTest {
                     MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(input)));
             var field = WrapperVerifier.class.getDeclaredField(name);
             field.setAccessible(true);
-            String pythonName = name.equals("JAR_SHA256") ? "expected_jar" : "expected_properties";
-            var matcher = Pattern.compile("(?m)^" + pythonName + " = \"([0-9a-f]{64})\"$")
-                    .matcher(python);
-            if (!expected.equals(actual) || !expected.equals(field.get(null))
-                    || !matcher.find() || !expected.equals(matcher.group(1)) || matcher.find()) {
+            if (!expected.equals(actual) || !expected.equals(field.get(null))) {
                 throw new AssertionError("Independent pin mismatch: " + name);
             }
         }
-        // Canonical verification enforces Java declarations; independently assert Python pins.
-        if (!python.contains("\"distributionUrl\": r\"" + url.substring(url.indexOf('=') + 1) + "\"")
-                || !python.contains("\"distributionSha256Sum\": \""
-                + checksum.substring(checksum.indexOf('=') + 1) + "\"")) {
-            throw new AssertionError("Python distribution declaration pins differ");
-        }
-        System.out.println("Independent canonical digests and Java/Python pin consistency passed");
+        System.out.println("Independent canonical digests and Java pins passed");
     }
 
     private void fixtures() throws IOException {

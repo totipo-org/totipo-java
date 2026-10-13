@@ -32,15 +32,8 @@ public final class HttpQueries implements RemoteReleaseState.Http, RemoteArtifac
         }
         require("api.github.com".equals(uri.getHost()), "Unapproved inspection host");
         var release = Pattern.compile("/repos/([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+)/releases/tags/v([^/]+)").matcher(path);
-        if (release.matches()) {
-            require(!SetNames.invalidRepositoryName(release.group(2)) && ReleaseInputs.validVersion(release.group(3)) && uri.getQuery() == null, "Invalid release endpoint");
-        } else {
-            var history = Pattern.compile("/repos/([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+)/actions/runs/[1-9][0-9]{0,19}/attempts/([1-9][0-9]{0,2})/jobs").matcher(path);
-            require(history.matches() && !SetNames.invalidRepositoryName(history.group(2))
-                    && Integer.parseInt(history.group(3)) <= RemoteReleaseState.MAX_ATTEMPTS
-                    && uri.getQuery() != null && uri.getQuery().matches("per_page=100&page=[1-9][0-9]{0,2}"), "Invalid history endpoint");
-            require(Integer.parseInt(uri.getQuery().substring("per_page=100&page=".length())) <= RemoteReleaseState.MAX_PAGES, "History page budget");
-        }
+        require(release.matches() && !SetNames.invalidRepositoryName(release.group(2))
+                && ReleaseInputs.validVersion(release.group(3)) && uri.getQuery() == null, "Invalid release endpoint");
         return RemoteReleaseState.GITHUB.bytes();
     }
     private static final class SetNames {

@@ -3,117 +3,116 @@ package org.totipo.tooling.release;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import org.totipo.tooling.publication.AcceptedFixture;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import static org.totipo.tooling.release.ReleaseTest.*;
-import static org.totipo.tooling.release.ReleaseFinalizer.*;
 import static org.totipo.tooling.release.RemoteReleaseState.*;
 
-/** Permanent strict fake adapters; every mutation and re-observation is counted. */
+/** Focused create-only reservation and existing-tag release tests. No simulated release coordinator. */
 public final class FinalizationTest {
     private FinalizationTest() {}
-    static final String SHA = "a".repeat(40), OBJECT = "b".repeat(40);
-    static Tag tag() { return new Tag(OBJECT, SHA, "tag", "totipo-java 0.2.0\n"); }
-    static Tag convention() { return new Tag("c".repeat(40), "d".repeat(40), "tag", "totipo-java 0.1.0\n"); }
-    static ReleaseRecord absent() { return new ReleaseRecord(Presence.ABSENT, null, null, false, false, null); }
-    static ReleaseRecord release(Expected expected) { return new ReleaseRecord(Presence.PRESENT, expected.tag(), expected.tag(), false, false, expected.body()); }
-    static Observed state(Tag local, Tag remote, ReleaseRecord release) { return new Observed(SHA, SHA, "", convention(), local, remote, release); }
-    static Prerequisites prerequisites(Path root) throws Exception {
-        var remote = RemoteVerificationTest.verify(root, RemoteVerificationTest.fake(root), 2400);
-        var inputs = new ReleaseInputs("0.2.0", SHA);
-        return new Prerequisites(remote, new ConsumerEvidence(ConsumerMode.CENTRAL_MODULE_METADATA, inputs, remote.hashes()),
-                new ConsumerEvidence(ConsumerMode.CENTRAL_POM, inputs, remote.hashes()));
+    static final ReleaseInputs INPUTS = new ReleaseInputs("0.2.0", "a".repeat(40));
+    static final String OBJECT = "b".repeat(40);
+    static Response response(int status, Map<String, ?> body) throws IOException {
+        return new Response(status, bytes(FinalizationProcesses.json(body)));
     }
-    static final class Fake implements Adapter {
-        Observed state;
-        final List<String> calls = new ArrayList<>();
-        String fail; boolean effectsBeforeFailure, noop; int observations, apiFailureAt;
-        Fake(Observed state) { this.state = state; }
-        @Override public Observed observe(Expected expected) throws IOException {
-            calls.add("observe"); if (++observations == apiFailureAt) throw new IOException("secret observation"); return state;
-        }
-        void mutate(String action, Observed next) throws IOException {
-            calls.add(action);
-            if ((!action.equals(fail) || effectsBeforeFailure) && !noop) state = next;
-            if (action.equals(fail)) throw new IOException("synthetic credential-bearing diagnostics");
-        }
-        @Override public void createTag(Expected expected) throws IOException {
-            if (state.local() != null || state.remote() != null) throw new AssertionError("Unexpected tag creation");
-            mutate("tag", state(tag(), null, absent()));
-        }
-        @Override public void pushTag(Expected expected, Tag local) throws IOException {
-            if (state.remote() != null || !tag().equals(local)) throw new AssertionError("Unexpected push");
-            mutate("push", state(tag(), tag(), absent()));
-        }
-        @Override public void createRelease(Expected expected) throws IOException {
-            if (state.remote() == null || state.release().presence() != Presence.ABSENT) throw new AssertionError("Unexpected release creation");
-            mutate("release", state(state.local(), tag(), release(expected)));
+    static Map<String, Object> ref() { return Map.of("ref", "refs/tags/v0.2.0", "object", Map.of("type", "tag", "sha", OBJECT)); }
+    static Map<String, Object> tag() { return Map.of("tag", "v0.2.0", "sha", OBJECT, "message", "totipo-java 0.2.0\n", "object", Map.of("type", "commit", "sha", INPUTS.commit())); }
+    static final class Api implements FinalizationProcesses.Api {
+        boolean reserved, ambiguous, failBefore, ambiguousRelease;
+        Map<String, Object> tag = tag(), ref = ref();
+        Map<String, Object> release;
+        final AtomicInteger refs = new AtomicInteger(), releases = new AtomicInteger();
+        @Override public synchronized Response request(String method, String path, Map<String, ?> body) throws IOException {
+            if (path.equals("/git/ref/tags/v0.2.0")) return response(reserved ? 200 : 404, ref);
+            if (path.equals("/git/tags/" + OBJECT)) return response(200, tag);
+            if (path.equals("/git/tags") && method.equals("POST")) {
+                if (failBefore) throw new IOException("before tag");
+                ok(body.get("message").equals("totipo-java 0.2.0\n")); return response(201, Map.of("sha", OBJECT));
+            }
+            if (path.equals("/git/refs") && method.equals("POST")) {
+                refs.incrementAndGet();
+                if (reserved) return response(422, Map.of());
+                reserved = true;
+                if (ambiguous) throw new IOException("response lost");
+                return response(201, ref);
+            }
+            if (path.equals("/releases/tags/v0.2.0")) return response(release == null ? 404 : 200, release == null ? Map.of() : release);
+            if (path.equals("/releases") && method.equals("POST")) {
+                releases.incrementAndGet(); release = new java.util.LinkedHashMap<>(body);
+                if (ambiguousRelease) throw new IOException("response lost");
+                return response(201, release);
+            }
+            throw new AssertionError("Unexpected operation " + method + " " + path);
         }
     }
-    static void blocked(Expected expected, Prerequisites pre, Observed state) throws Exception {
-        Fake fake = new Fake(state); ok(execute(expected, pre, fake).action() == Action.BLOCKED); ok(fake.calls.equals(List.of("observe")));
+    static void reservations() throws Exception {
+        Api api = new Api(); SourceIdentity.reserve(api, INPUTS, "1"); ok(api.reserved && api.refs.get() == 1);
+        RemoteReleaseState.absent(INPUTS.version(), uri -> response(404, Map.of()));
+        // A new dispatch at attempt 1, reruns and a reservation with no upload all remain consumed.
+        for (String attempt : new String[]{"1", "2", "3"}) reject(() -> SourceIdentity.reserve(api, INPUTS, attempt));
+        ok(api.refs.get() == 1);
+        Api ambiguous = new Api(); ambiguous.ambiguous = true;
+        reject(() -> SourceIdentity.reserve(ambiguous, INPUTS, "1")); ok(ambiguous.reserved && ambiguous.refs.get() == 1);
+        reject(() -> SourceIdentity.reserve(ambiguous, INPUTS, "1")); ok(ambiguous.refs.get() == 1);
+        Api before = new Api(); before.failBefore = true; reject(() -> SourceIdentity.reserve(before, INPUTS, "1")); ok(!before.reserved && before.refs.get() == 0);
+        for (int status : new int[]{200, 403, 422, 500}) {
+            Api underlying = new Api();
+            FinalizationProcesses.Api uncertain = (method, path, body) -> path.equals("/git/refs")
+                ? response(status, ref()) : underlying.request(method, path, body);
+            reject(() -> SourceIdentity.reserve(uncertain, INPUTS, "1"));
+        }
+        Api unreadable = new Api();
+        FinalizationProcesses.Api wrongReadback = (method, path, body) -> path.equals("/git/tags/" + OBJECT)
+            ? response(200, Map.of()) : unreadable.request(method, path, body);
+        reject(() -> SourceIdentity.reserve(wrongReadback, INPUTS, "1")); ok(unreadable.reserved);
+        Api rerun = new Api(); reject(() -> SourceIdentity.reserve(rerun, INPUTS, "2")); ok(rerun.refs.get() == 0);
+        // Competing creators both observe absence; only atomic create-reference wins.
+        Api race = new Api(); var barrier = new java.util.concurrent.CyclicBarrier(2);
+        FinalizationProcesses.Api competing = (method, path, body) -> {
+            if (method.equals("POST") && path.equals("/git/tags")) {
+                try { barrier.await(5, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (Exception e) { throw new IOException("barrier failed"); }
+            }
+            return race.request(method, path, body);
+        };
+        AtomicInteger winners = new AtomicInteger();
+        try (var workers = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var tasks = java.util.List.of(workers.submit(() -> reserve(competing, winners)), workers.submit(() -> reserve(competing, winners)));
+            for (var task : tasks) task.get();
+        }
+        ok(winners.get() == 1 && race.refs.get() == 2);
     }
-    static void machine(Expected expected, Prerequisites pre) throws Exception {
-        Fake fake = new Fake(state(null, null, absent())); ok(execute(expected, pre, fake).action() == Action.COMPLETE);
-        ok(fake.calls.equals(List.of("observe", "tag", "observe", "push", "observe", "release", "observe")));
-        fake = new Fake(state(tag(), null, absent())); ok(execute(expected, pre, fake).action() == Action.COMPLETE);
-        ok(fake.calls.equals(List.of("observe", "push", "observe", "release", "observe")));
-        fake = new Fake(state(null, tag(), absent())); ok(execute(expected, pre, fake).action() == Action.COMPLETE);
-        ok(fake.calls.equals(List.of("observe", "release", "observe")));
-        fake = new Fake(state(tag(), tag(), release(expected))); ok(execute(expected, pre, fake).action() == Action.COMPLETE); ok(fake.calls.equals(List.of("observe")));
-        var record = release(expected);
-        for (var bad : List.of(new ReleaseRecord(Presence.PRESENT, "v0.2.1", record.name(), false, false, record.body()),
-                new ReleaseRecord(Presence.PRESENT, record.tag(), "other", false, false, record.body()),
-                new ReleaseRecord(Presence.PRESENT, record.tag(), record.name(), true, false, record.body()),
-                new ReleaseRecord(Presence.PRESENT, record.tag(), record.name(), false, true, record.body()),
-                new ReleaseRecord(Presence.PRESENT, record.tag(), record.name(), false, false, "wrong"),
-                new ReleaseRecord(Presence.PRESENT, record.tag(), record.name(), false, false, record.body() + "contradiction"))) blocked(expected, pre, state(tag(), tag(), bad));
-        fake = new Fake(state(tag(), tag(), new ReleaseRecord(Presence.PRESENT, record.tag(), record.name(), false, false, record.body().replace("\n", "\r\n") + " \r\n")));
-        ok(execute(expected, pre, fake).action() == Action.COMPLETE); ok(fake.calls.size() == 1);
-        blocked(expected, pre, state(tag(), null, record));
-        for (var bad : List.of(new Tag(SHA, SHA, "commit", ""), new Tag(OBJECT, "f".repeat(40), "tag", tag().annotation()),
-                new Tag(OBJECT, null, "tag", tag().annotation()), new Tag(null, SHA, "tag", tag().annotation()),
-                new Tag(OBJECT, SHA, "tag", "totipo-java 0.2.0\n-----BEGIN PGP SIGNATURE-----"),
-                new Tag(OBJECT, SHA, "tag", "wrong annotation"))) {
-            blocked(expected, pre, state(bad, null, absent())); blocked(expected, pre, state(null, bad, absent()));
-        }
-        blocked(expected, pre, state(new Tag("f".repeat(40), SHA, "tag", tag().annotation()), tag(), absent()));
-        blocked(expected, pre, new Observed("f".repeat(40), SHA, "", convention(), null, null, absent()));
-        blocked(expected, pre, new Observed(SHA, "f".repeat(40), "", convention(), null, null, absent()));
-        blocked(expected, pre, new Observed(SHA, SHA, " M VERSION", convention(), null, null, absent()));
-        blocked(expected, pre, new Observed(SHA, SHA, "", new Tag(OBJECT, SHA, "commit", ""), null, null, absent()));
-        blocked(expected, pre, new Observed(SHA, SHA, "", null, null, null, absent()));
-        blocked(expected, pre, state(null, null, null));
-        blocked(expected, new Prerequisites(pre.remote(), pre.pom(), pre.module()), state(null, null, absent()));
-        blocked(expected, new Prerequisites(pre.remote(), new ConsumerEvidence(ConsumerMode.CENTRAL_MODULE_METADATA, new ReleaseInputs("0.2.0", "f".repeat(40)), pre.remote().hashes()), pre.pom()), state(null, null, absent()));
-        blocked(expected, new Prerequisites(pre.remote(), new ConsumerEvidence(ConsumerMode.CENTRAL_MODULE_METADATA, expected.inputs(), java.util.Map.of()), pre.pom()), state(null, null, absent()));
-        for (String operation : List.of("tag", "push", "release")) for (boolean effects : List.of(false, true)) {
-            fake = new Fake(state(null, null, absent())); fake.fail = operation; fake.effectsBeforeFailure = effects;
-            Fake attempt = fake; reject(() -> execute(expected, pre, attempt));
-            ok(fake.calls.getLast().equals(operation)); // No automatic second mutation or success from ambiguous outcome.
-            int pushBefore = java.util.Collections.frequency(fake.calls, "push");
-            int releaseBefore = java.util.Collections.frequency(fake.calls, "release");
-            fake.fail = null; ok(execute(expected, pre, fake).action() == Action.COMPLETE);
-            ok(java.util.Collections.frequency(fake.calls, "push") == (operation.equals("push") && !effects ? 2 : Math.max(1, pushBefore)));
-            ok(java.util.Collections.frequency(fake.calls, "release") == (operation.equals("release") && !effects ? 2 : Math.max(1, releaseBefore)));
-            int count = fake.calls.size(); ok(execute(expected, pre, fake).action() == Action.COMPLETE); ok(fake.calls.size() == count + 1);
-        }
-        fake = new Fake(state(null, null, absent())); fake.noop = true; Fake noop = fake; reject(() -> execute(expected, pre, noop)); ok(fake.calls.equals(List.of("observe", "tag", "observe")));
-        fake = new Fake(state(tag(), null, absent())); fake.apiFailureAt = 2; Fake api = fake; reject(() -> execute(expected, pre, api));
-        ok(fake.calls.equals(List.of("observe", "push", "observe")));
+    static void reserve(FinalizationProcesses.Api api, AtomicInteger winners) {
+        try { SourceIdentity.reserve(api, INPUTS, "1"); winners.incrementAndGet(); } catch (IOException expected) { /* loser stops */ }
     }
     public static void main(String[] args) throws Exception {
-        Path root = Files.createTempDirectory("totipo-finalizer-fixture-");
+        reservations();
+        Path root = Files.createTempDirectory("release-finalizer-test-");
         try {
-            AcceptedFixture.create(root); ReleaseTest.fixture(root); Files.copy(Path.of(args[0]).resolve("SPEC_PIN.md"), root.resolve("SPEC_PIN.md"));
-            var source = new SourceFiles(root); var expected = Expected.read(source, new ReleaseInputs("0.2.0", SHA));
-            ok(expected.body().endsWith("- Portable corpus: 92/92 executed, none deferred.\n"));
-            machine(expected, prerequisites(root));
-            reject(() -> Expected.read(source, new ReleaseInputs("0.2.1", SHA)));
-            Files.delete(root.resolve("review/V0_2_0_RELEASE_NOTES.md")); reject(() -> Expected.read(source, new ReleaseInputs("0.2.0", SHA)));
-            System.out.println("FinalizationTest PASS");
-        } finally { try (var paths = Files.walk(root)) { for (Path p : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(p); } }
+            fixture(root); Files.copy(Path.of(args[0]).resolve("SPEC_PIN.md"), root.resolve("SPEC_PIN.md"));
+            var expected = ReleaseFinalizer.Expected.read(new SourceFiles(root), INPUTS);
+            Api api = new Api(); api.reserved = true;
+            ReleaseFinalizer.finish(expected, api); ok(api.releases.get() == 1);
+            ReleaseFinalizer.finish(expected, api); ok(api.releases.get() == 1);
+            api.release.put("body", expected.body().replace("\n", "\r\n") + " \n"); ReleaseFinalizer.finish(expected, api);
+            for (String field : new String[]{"tag_name", "name", "body", "draft", "prerelease"}) {
+                Object old = api.release.get(field); api.release.put(field, field.equals("draft") || field.equals("prerelease") ? true : "wrong");
+                reject(() -> ReleaseFinalizer.finish(expected, api)); api.release.put(field, old);
+            }
+            Api uncertain = new Api(); uncertain.reserved = true; uncertain.ambiguousRelease = true;
+            reject(() -> ReleaseFinalizer.finish(expected, uncertain)); ok(uncertain.releases.get() == 1);
+            ReleaseFinalizer.finish(expected, uncertain); ok(uncertain.releases.get() == 1);
+            Api missing = new Api(); reject(() -> ReleaseFinalizer.finish(expected, missing)); ok(missing.releases.get() == 0);
+            Api lightweight = new Api(); lightweight.reserved = true;
+            lightweight.ref = Map.of("ref", "refs/tags/v0.2.0", "object", Map.of("type", "commit", "sha", OBJECT));
+            reject(() -> ReleaseFinalizer.finish(expected, lightweight));
+            for (Map<String, Object> bad : java.util.List.of(
+                Map.<String, Object>of("tag", "v0.2.0", "sha", OBJECT, "message", "wrong", "object", Map.of("type", "commit", "sha", INPUTS.commit())),
+                Map.<String, Object>of("tag", "v0.2.0", "sha", OBJECT, "message", "totipo-java 0.2.0\n", "object", Map.of("type", "commit", "sha", "c".repeat(40))))) {
+                Api wrong = new Api(); wrong.reserved = true; wrong.tag = bad; reject(() -> ReleaseFinalizer.finish(expected, wrong)); ok(wrong.releases.get() == 0);
+            }
+        } finally { AuthorizationTest.remove(root); }
+        System.out.println("Create-only tag and release tests PASS");
     }
 }

@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import static org.totipo.tooling.publication.FilesSupport.*;
 
-/** J2B shadow interface: all paths explicit; evidence outputs must be outside input trees. */
+/** Independent verifier: explicit evidence outputs, with a narrow Gradle integration destination. */
 public final class PublicationCli {
     private PublicationCli() {}
     public static void run(String[] args) throws IOException {
@@ -20,8 +20,14 @@ public final class PublicationCli {
         if (operation.equals("verify")) {
             Path metadata = Path.of(args[4]).toAbsolutePath().normalize();
             for (Path output : new Path[] {manifestPath, metadata})
-                require(!output.startsWith(root) && !output.startsWith(repo), "Shadow evidence must be outside root/repository: " + output);
+                require(!output.startsWith(repo) && (!output.startsWith(root)
+                    || output.equals(root.resolve("build/publication-manifest.json"))
+                    || output.equals(root.resolve("publishing/consumer-smoke/gradle/verification-metadata.xml"))),
+                    "Unapproved evidence output location");
             require(!manifestPath.equals(metadata), "Evidence output paths overlap");
+            // Fresh Git checkouts omit ignored/generated directories. Create them
+            // through the same anchored NOFOLLOW operations used for artifact copies.
+            directories(manifestPath.getParent()); directories(metadata.getParent());
             // Remove stale evidence before semantic checks. Manifest is the last successful write.
             delete(manifestPath); delete(metadata);
             try {

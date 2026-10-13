@@ -18,6 +18,7 @@
           inherit system;
         };
         tooling = pkgs.callPackage ./nix/tooling.nix { };
+        wrapper = pkgs.callPackage ./nix/wrapper-verifier.nix { };
         javaQualification = pkgs.callPackage ./qualification.nix {
           publicationTool = tooling.launcher;
           jdk = pkgs.jdk25_headless;
@@ -30,11 +31,16 @@
         # One library build, with a useful unsigned Maven-shaped output.
         packages = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           default = javaQualification;
+          tooling = tooling.launcher;
+          release-runtime = pkgs.symlinkJoin {
+            name = "totipo-release-runtime";
+            paths = [ tooling.launcher wrapper pkgs.jdk25_headless pkgs.gitMinimal pkgs.curl pkgs.cacert ];
+          };
         };
         checks = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           java = javaQualification;
           tooling = tooling.check;
-          wrapper = pkgs.callPackage ./nix/wrapper-verifier.nix { };
+          inherit wrapper;
         };
         apps = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           tooling = {
@@ -53,13 +59,11 @@
           packages = with pkgs; [
             jdk25_headless
             gradle_9
-            python3
             (jailed-agents.lib.${system}.makeJailedCodex {
               fwdEnv = [ "JAVA_HOME" ];
               extraPkgs = with pkgs; [
                 jdk25_headless
                 gradle_9
-                python3
               ];
             })
           ];

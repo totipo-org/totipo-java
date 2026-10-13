@@ -8,13 +8,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import static org.totipo.tooling.release.SourceFiles.require;
 
-/** Exact current Python WorkflowPinTests contract, not a general YAML parser. */
+/** Approved immutable action pins and the single intended relative reusable workflow. */
 public final class WorkflowPins {
     private WorkflowPins() {}
     private record Pin(String sha, String version, String runtime) {}
     private static final Map<String, Pin> APPROVED = Map.of(
         "actions/checkout", new Pin("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1", "node24"),
-        "actions/setup-java", new Pin("de7274f081f381c8f8158605e0321c36c376e2e6", "v6.0.1", "node24"),
         "cachix/install-nix-action", new Pin("13d8dd58da0234aa297dedd986986ccb8e7f3e24", "v31.11.1", "composite"));
     private static final Pattern USES = Pattern.compile("\\buses\\s*['\"]?\\s*:");
     private static final Pattern CANONICAL = Pattern.compile("\\s*(?:-\\s*)?uses: ([\\w-]+/[\\w-]+)@([0-9a-f]{40}) # (v\\d+\\.\\d+\\.\\d+)\\s*");
@@ -22,6 +21,7 @@ public final class WorkflowPins {
         var found = new HashSet<String>();
         for (String line : text.split("\\R")) {
             if (line.stripLeading().startsWith("#") || !USES.matcher(line).find()) continue;
+            if (line.equals("    uses: ./.github/workflows/verify-release.yml")) continue;
             var matcher = CANONICAL.matcher(line);
             require(matcher.matches(), "Noncanonical or unpinned workflow action");
             Pin expected = APPROVED.get(matcher.group(1));

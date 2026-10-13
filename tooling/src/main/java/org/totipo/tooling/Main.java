@@ -3,7 +3,7 @@ package org.totipo.tooling;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-/** Independent tooling; Python retains live publication and release authority. */
+/** Standalone Java tooling; GitHub Actions owns release orchestration. */
 public final class Main {
     private Main() {}
 
@@ -12,7 +12,7 @@ public final class Main {
             try {
                 org.totipo.tooling.release.ReleaseInspectionCli.run(java.util.Arrays.copyOfRange(args, 1, args.length), System.getenv());
             } catch (IOException | RuntimeException e) {
-                System.err.println("Release inspection failed: " + e.getMessage());
+                System.err.println("Release operation failed (details suppressed)");
                 System.exit(1);
             }
             return;
@@ -21,7 +21,7 @@ public final class Main {
             try {
                 org.totipo.tooling.publication.PublicationCli.run(java.util.Arrays.copyOfRange(args, 1, args.length));
             } catch (IOException | RuntimeException e) {
-                System.err.println("Publication operation failed: " + e.getMessage());
+                System.err.println("Publication operation failed (details suppressed)");
                 System.exit(1);
             }
             return;

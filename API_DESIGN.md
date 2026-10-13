@@ -17,6 +17,15 @@ normal application entry points. See README for release availability and coordin
 Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 <!-- prepared-release:end -->
 
+Release preparation is reviewed source editing, not an automated mutation
+transaction. The intended post-activation release process is one manual Actions
+dispatch bound to exact source, first-time tag reservation before one Gradle
+publication invocation, independently repeatable verification and exact GitHub
+Release creation/validation. J4B keeps mutation jobs disabled pending separate
+owner activation. See RELEASE_CHECKLIST.md. This release policy is separate from
+application object-publication and retry contracts below.
+
+
 0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
 Independent object-candidate validation is retained.
 

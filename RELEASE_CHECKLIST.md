@@ -1,361 +1,164 @@
-# Totipo Java 0.2.0 release checklist
+# Totipo Java release checklist
 
-<!-- prepared-release:start -->
-Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
-<!-- prepared-release:end -->
-Independent immutable object-candidate validation remains available.
-The implementation version comes from `VERSION`; protocol compatibility is independent. The protocol
-remains Totipo Vault Format v1/r19. Specification revisions do not mechanically
-determine the Java semantic version.
+**J4B is implemented for review, with live mutations disabled.** The procedure
+below is the intended experience after a separately authorized activation change.
+Merging these workflows does not activate tag creation, signing, Central upload
+or GitHub Release creation.
 
-Release provenance:
+## Successful release after activation
 
-- Maven coordinates: `org.totipo:totipo-core:0.2.0` and
-  `org.totipo:totipo-storage-nio:0.2.0`.
-- Protocol: v1/r19, specification commit
-  `cdb4e91be1c6d3704874b2b92457ffe7be5e9084`; authoritative hashes in `SPEC_PIN.md`.
-- Conformance: protocol-foundation core operations, audited facade TOKEN projections
-  and metadata handling in create/update/merge (including partial resolution and
-  frozen retries), and qualified low-level NIO/core store operations as scoped in
-  README. No blanket facade certification or application conformance. The previous
-  historical-metadata qualification is resolved by the
-  [focused §12 audit](review/V1_R18_CAUSAL_FACT_METADATA_REPORT.md); application-observation
-  limitations in API_DESIGN.md remain.
-- Portable corpus: 92/92, none deferred; reconfirmed on the exact release commit.
-- Java source commit: the operator enters the full reviewed SHA at dispatch. The
-  workflow appends it to the GitHub release body, leaving committed reviewed notes
-  unchanged. Annotated source tag convention: `v0.2.0`, matching unsigned `v0.1.0`.
-- Java 17 production bytecode; builds use pinned Gradle 9.8.0 and JDK 25.
-- Qualification limits in README still apply; no new desktop, Android, provider,
-  independent interoperability, or security-audit claim follows from publication.
+1. Prepare `VERSION` (exact version plus LF), both Totipo self-coordinates in
+   `publishing/consumer-smoke/gradle.lockfile`, and
+   `review/V<version-with-dots-as-underscores>_RELEASE_NOTES.md`. Notes begin with
+   `## v<version>` and contain completed Highlights, Compatibility and scope, and
+   Validation sections. Review source metadata and README/API release status.
+   Keep the exact r19 specification pin and complete snapshot intact.
+2. Run the applicable [qualification ladder](AGENTS.md#milestone-qualification-ladder)
+   and the separate release reproducibility procedure below. Review and commit
+   the intended release source through the normal review process.
+3. Confirm ordinary CI succeeds for that commit.
+4. Open GitHub Actions → **Release**, select `main`, enter the version and its
+   exact lowercase 40-character reviewed commit SHA, then start the workflow.
+5. Expect qualification, first-time annotated tag reservation, signing, one
+   Gradle Maven Central publication invocation, independent Central verification,
+   both Central consumers, and automatic GitHub Release creation. Intervene only
+   on failure. No manual tag, Portal promotion or GitHub Release creation is needed.
 
-## Source preparation and local review
+Initial dispatch SHA must equal the requested source. Subsequent checks require
+that exact source to remain reachable from freshly acquired canonical `main`;
+normal development may advance main during publication or later verification.
+Source and artifact identity always remain bound to the original commit.
 
-The normal first step, from clean `main`, is:
+The tag `v<version>` is an unsigned annotated tag at the reviewed commit, with
+annotation `totipo-java <version>` followed by LF. It permanently reserves the
+version **before** signing/upload. Existing tags always prevent ordinary
+publication, even on a new dispatch at attempt 1 and even if both Central POMs
+return 404. Workflow and publishing-job reruns cannot authorize publication.
 
-```sh
-python3 -B publishing/release.py prepare <version> --dry-run
-python3 -B publishing/release.py prepare <version>
-```
+The accepted guarantee is **at most one authorized Gradle Central publication
+invocation per version**, not exactly-once HTTP transmission or Sonatype delivery.
+Vanniktech 0.37.0 / OkHttp 5.1.0 may internally retransmit within that invocation.
+That behavior is accepted; retransmission is not asserted harmless or idempotent.
+There is no workflow retry wrapper, upload recovery mode or manual override flag.
+Ordinary Gradle configuration exposes unsigned local staging only.
 
-`prepare` only edits/validates local release source. It never publishes, tags,
-pushes, signs or dispatches release workflows. It needs no credentials and runs
-no builds. Stable versions must advance; equal/older versions are rejected.
-It validates exact r19 pin/snapshot integrity and known metadata layouts before
-writing VERSION, this checklist, the workflow input example, the two consumer
-self-lock entries, README/API prepared-status blocks, and a version-specific notes
-skeleton if missing. Historical notes/reports and published examples are untouched.
-Ownership is limited to VERSION; this checklist's title, Maven coordinates,
-annotated source tag convention, reviewed-notes path, workflow version input and
-prepared-status block; the workflow input example; the two consumer self-lock
-entries; and README/API_DESIGN prepared-status blocks. Each owned slot must occur
-exactly once and agree with the current version, including during same-version
-checks. Duplicate markers or conflicting owned declarations fail before writes.
-Explanatory/compatibility prose outside these slots is not release metadata:
-for example, API_DESIGN's “existing 0.2.0 API” scheduling context may intentionally
-remain historical after a future release. Preparation neither rejects nor rewrites
-such references; updating them requires separate editorial review.
-Review all edited paths, finish the generated notes, then run:
+## Verification-only recovery
 
-```sh
-python3 -B publishing/release.py prepare <version> --check
-```
+Open GitHub Actions → **Verify Release**, select `main`, enter the **original**
+version and reviewed source SHA, and start verification. Never invoke Release
+merely to retry verification.
 
-This repeatable check permits the preparation diff and writes nothing. It checks
-consistent source metadata and reviewed-note structure, not qualification results.
-It also works on a detached checkout of the reviewed commit, as used by the release
-workflow. Release authority remains enforced by the separate identity preflight;
-source mutation and dry-run still require clean `main`.
-A second mutating prepare rejects an equal version; use `--check` for idempotent
-validation. Current source must contain the owned prepared-release markers.
+This fresh run authenticates the existing annotated tag and source, bootstraps the
+same pinned tools, independently rebuilds and accepts all ten unsigned artifacts,
+checks Central bytes and all ten detached-signature files, executes both remote
+consumers with distinct fresh external Gradle homes, and creates or validates the
+GitHub Release. It needs no earlier Actions artifact, Maven credentials, signing
+secret or `release` environment. It cannot upload to Central or create a missing tag.
+While J4B is inert, read-only verification can run but GitHub finalization is skipped.
 
-Follow these separate gates in order:
-
-1. Source preparation and breaking API review against canonical Central 0.1.5.
-2. Complete the applicable stable-boundary checks in the
-   [qualification ladder](AGENTS.md#milestone-qualification-ladder), freeze included
-   inputs, then human final routine hermetic qualification: `nix flake check`.
-3. Separate release artifact reproducibility comparison below; retain the normal
-   inventory outside build outputs before forced offline rebuilding.
-4. Human review, release-source commit and review through the usual process.
-5. Release-source CI, separately from implementation-commit CI; require success.
-6. Explicitly authorized protected release dispatch and environment approval.
-
-0.2.0 intentionally breaks the 0.1.x experimental source/binary API. Review
-the version-specific release notes and exact API inventories;
-compatibility with 0.1.5 is not an acceptance criterion.
-
-## Preferred procedure: protected GitHub Actions workflow
-
-Use **Release**, [.github/workflows/release.yml](.github/workflows/release.yml).
-Its only trigger is `workflow_dispatch`; changing `VERSION` or pushing to `main`
-does not publish anything. The architecture intentionally replaces the previous
-manual Central Portal publication with protected-workflow automatic publication.
-
-```text
-preflight (no release secrets)
-  → publish-central (release environment approval → sign → publish and release)
-  → verify-central (exact remote bytes and fresh module/POM consumers)
-  → tag-and-github-release (annotated source tag → GitHub release)
-```
-
-- [ ] Review and commit the complete release source; push the reviewed commit to
-  `main` through the repository's usual review process. Keep `main` at that commit
-  while releasing; identity checks fail if it moves.
-- [ ] Verify `VERSION`, the exact r19 pin, corpus outcomes and reviewed
-  `review/V0_2_0_RELEASE_NOTES.md`. A future version needs its own reviewed notes
-  matching `review/V<version-with-dots-replaced-by-underscores>_RELEASE_NOTES.md`.
-  Identity preflight and the final job both validate the version heading; no
-  per-version script/workflow edit is needed.
-- [ ] Confirm authority for the Central namespace `org.totipo`, Portal user-token
-  credentials, and a Central-compatible signing key/public-key distribution.
-- [ ] Complete the one-time environment setup below.
-- [ ] In Actions → **Release** → **Run workflow**, select **main** and enter:
-  - `version`: `0.2.0`, exactly matching `VERSION`.
-  - `commit`: the full **40 lowercase hexadecimal characters** of the reviewed
-    current `main` commit. Abbreviated SHAs are rejected.
-- [ ] Review preflight evidence; approve deployment to **release** when prompted.
-  Dispatch and protected-environment approval are the intentional human controls
-  for irreversible Maven Central publication. Configure required reviewers to
-  obtain an approval prompt; declaring an environment alone does not enforce one.
-- [ ] Confirm all four jobs succeed. Maven Central is the binary distribution
-  channel; the GitHub release has reviewed notes/provenance, without Maven binaries.
-
-Version input follows the repository's `major.minor.patch` grammar with an optional
-Maven qualifier; snapshot releases are excluded. Inputs pass through quoted
-environment variables, with validation before checkout or command use. The exact
-checkout SHA, dispatch SHA, `refs/heads/main`, current fetched `origin/main`, exact
-`VERSION`, clean checkout, and committed expected `SPEC_PIN.md` are checked.
-Tags and current `main` are fetched explicitly. An existing `v<version>` tag or
-GitHub release stops initial preflight. Both canonical Central POM endpoints must
-return **404**; **200** means an immutable version already exists. Network errors
-and any unexpected HTTP status fail closed.
-
-## One-time GitHub UI setup
-
-In repository **totipo-org/totipo-java**:
-
-1. Settings → Environments → create **release**.
-2. Restrict deployment branches to **main**.
-3. Configure required review/approval where supported by the repository's GitHub
-   plan. For a sole maintainer, leave **prevent self-review** disabled unless
-   another reviewer is available. Verify protection is enforced before dispatch.
-4. Add these **environment** secrets, never repository source or ordinary CI:
-
-| GitHub environment secret | Existing Gradle environment property |
+| Failure | Maintainer response |
 | --- | --- |
-| `MAVEN_CENTRAL_USERNAME` | `ORG_GRADLE_PROJECT_mavenCentralUsername` |
-| `MAVEN_CENTRAL_PASSWORD` | `ORG_GRADLE_PROJECT_mavenCentralPassword` |
-| `SIGNING_IN_MEMORY_KEY` | `ORG_GRADLE_PROJECT_signingInMemoryKey` |
-| `SIGNING_IN_MEMORY_KEY_PASSWORD` | `ORG_GRADLE_PROJECT_signingInMemoryKeyPassword` |
-| `SIGNING_IN_MEMORY_KEY_ID` | `ORG_GRADLE_PROJECT_signingInMemoryKeyId` |
+| Before tag creation | Investigate and correct source/environment; review and commit source corrections before another dispatch. |
+| Tag reserved, including when no upload started | Ordinary publication cannot restart. Investigate; never move/delete the reservation or infer upload permission from 404. |
+| Failed, cancelled, timed-out or uncertain upload | Inspect Central Portal and run evidence manually. No second publication invocation is authorized. Use verification-only if publication may have completed. |
+| Verification timeout or temporary consumer failure | Investigate, then explicitly start Verify Release again with the original identity. |
+| GitHub Release failure/uncertainty | Explicitly repeat Verify Release. An exact existing release succeeds without mutation. |
+| Conflicting tag, artifact bytes or GitHub Release | Stop; automation never repairs, overwrites, moves or deletes them. |
 
-The Central username/password are **Portal user-token fields**, not a Portal login
-password. The first three secrets are required. The password is required for an
-encrypted private key; omit it only for a genuinely unencrypted key accepted by
-the existing signing plugin. Key ID is optional unless the configured key needs
-selection. Empty optional fields are unset before Gradle. Key packet inspection
-uses stdin and captured memory only; no private-key file is created or imported.
-Signing tasks are the authoritative proof that the key/password/selection works.
-Missing required secrets are reported by name without their values.
+Central verification polls for at most 40 minutes, with requests bounded to 20
+seconds and backoff from 10 to 60 seconds. Only 404 is pending. Incorrect hashes,
+malformed/oversized evidence, network errors and unexpected statuses fail closed.
+All ten adjacent `.asc` files need both ASCII armor markers; this is signature
+presence evidence, not independent cryptographic validity or signer trust.
+Both remote module-metadata and POM-only consumers must pass before finalization.
+Their Central-only repositories prohibit local fallback/source substitution and
+require exactly NIO/core plus Bouncy Castle 1.86 at runtime.
 
-Only `publish-central` references this environment and signing/Central secrets.
-Ordinary CI, preflight, remote verification and tagging have no access to them.
-`GITHUB_TOKEN` supplies GitHub read access and final tag/release write access;
-no additional PAT is required. All checkout credentials remain unpersisted;
-final tag push uses an ephemeral process environment for authentication.
+GitHub finalization independently derives notes/provenance from reviewed source.
+It requires an existing authenticated tag, exact title/tag, published/non-prerelease
+state and matching reviewed body under established CRLF/trailing-whitespace
+normalization. It creates an absent release once and validates readback; an exact
+existing release is unchanged. Ambiguous creation stops; a later explicit run may
+observe and accept the exact release.
 
-## Routine source qualification and release artifact reproducibility
+## Qualification and release reproducibility
 
-The routine human source gate is exactly:
+The final human-owned routine hermetic gate remains exactly:
 
 ```sh
 nix flake check
 ```
 
-Use the current Git-aware working tree. Keep tracked modifications unstaged and
-make every intended new milestone file Git-known with `git add --intent-to-add`
-before this gate; `git diff --cached --quiet` must pass. Keep ignored/local build,
-cache and secret state outside source membership. See the
-[source-membership policy](AGENTS.md#git-aware-local-source-membership).
+Agents do not execute Nix. Use Git-aware source membership, intent-to-add for every
+intended new source/report, no staged contents, and freeze included inputs before
+this gate. Dependency/cache updates follow the separate AGENTS policy; release
+simplification does not itself authorize dependency or lock updates.
 
-It runs the full credential-free Java/build/publication/consumer/Python suite with
-pinned JDK 25, Gradle 9.8.0 and Python 3 on x86_64-linux, including wrapper identity,
-Java 17 bytecode, both consumer modes, full accounting before focused integrity,
-and all 99 snapshot hashes. Follow the
-[qualification ladder](AGENTS.md#milestone-qualification-ladder) for classification,
-small baselines, focused iteration and the final normal Java gate before freezing
-included inputs. Never trade final coverage for faster iteration. No second
-ordinary Nix build or automatic duplicate host forced-offline full Gradle suite
-is required: Nix already executes the authoritative offline qualification. A
-separate host offline pass requires a dependency/build/publication-resolution or
-consumer-resolution/cache change and a recorded independent purpose. See README
-for the separate human dependency-cache update and exhaustive review checkpoint;
-regeneration is not a routine gate. Agents must not run Nix; the human runs the
-command above last. Later included-input edits invalidate that result.
+Publication verification uses the prebuilt independent Java launcher, compiled
+with pinned JDK 25 and Jackson Core 2.21.7, independently of Gradle/production code.
+A human can materialize it with `nix build .#tooling --no-update-lock-file --no-write-lock-file`
+and set `TOTIPO_PUBLICATION_TOOL="$PWD/result/bin/totipo-java-tool"` before direct
+host Gradle publication checks. This is tooling materialization, not a second
+qualification gate. In CI the pinned runtime supplies the launcher and JDK.
 
-Pure docs/Javadocs follow the docs-only profile in AGENTS.md. Excluded Markdown
-process/report edits do not invalidate Java artifacts or require Nix; source
-Javadocs are included and require the documented source-Javadoc qualification.
-Checklist prose alone does not require a release artifact reproducibility rerun
-unless the release operation itself changes. Record gate invocation counts,
-failures/reruns and reasons in the milestone report. Preserve full-suite XML and
-accounting before focused tests or clean rebuilds replace it.
-
-Release preparation additionally retains the established **normal versus forced
-offline ten-artifact comparison** below. This deliberate pair supplies release
-reproducibility evidence; a Nix check or a deliberate Nix rebuild does not replace
-it. Use JDK 25 and Python 3.9+ (standard library only). The protected release
-workflow remains separate and repeats its exact-source preflight and comparison
-before any approved signing/publication. It continues verifying full accounting,
-POM-only consumers and focused integrity independently.
+For explicit release-source preparation, retain the normal/offline comparison;
+preserve full XML/accounting before any clean or focused run replaces it:
 
 ```sh
-./gradlew clean test build verifyPublication consumerSmoke
-python3 -B publishing/release.py tests
-# Use a directory outside build outputs; preserve the exact normal inventory.
+./gradlew --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
+"$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
+# Copy manifest and full XML to an external evidence directory before the next run.
 cp build/publication-manifest.json /tmp/totipo-normal-publication-manifest.json
-./gradlew --offline --no-daemon --no-build-cache --rerun-tasks \
-  clean test build verifyPublication consumerSmoke
-python3 -B publishing/release.py tests
+./gradlew --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
+"$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
 EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-manifest.json)" \
   REQUESTED_VERSION="$(cat VERSION)" REQUESTED_COMMIT="$(git rev-parse HEAD)" \
-  DISPATCH_REF=refs/heads/main DISPATCH_SHA="$(git rev-parse HEAD)" \
-  python3 -B publishing/release.py compare
-git diff --check
-git status --short
+  "$TOTIPO_PUBLICATION_TOOL" release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
+./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
 
-- [ ] Full normal and forced offline suites have zero failures/errors/skips.
-  Current r19 totals are in the simplification report; the total is recorded,
-  not used as the sole acceptance criterion. Explicit executed-set corpus
-  accounting proves **92/92**; integrity is **3/3 snapshot + 1/1 profile** and
-  **99/99** snapshot records validate.
-- [ ] Java 17 production classfile checks, Javadocs, strict dependency verification
-  and locks, publication structure/content/scopes, and both consumer modes pass.
-- [ ] Exactly 10 unsigned artifacts (six JARs, two POMs, two `.module` files) in
-  `build/publication-manifest.json` have equal artifact hashes across normal and forced offline
-  builds. Repository-index timestamps and signatures are excluded. The inventory
-  is passed between jobs as a small immutable preflight output; each later job
-  independently rebuilds and compares it. This is exact-byte verification, not
-  an assumption that all JDKs produce identical bytes.
-- [ ] Checkout stays clean; production Java, spec snapshot, corpus and expected
-  outcomes are unchanged by release machinery.
+Require all ten hashes to match: binary/source/Javadoc JARs, POMs and module
+metadata for both modules. Each build's staging fingerprint must validate locally;
+do not compare ephemeral Maven repository indexes across builds. Do not normalize
+or omit differing artifact bytes. Retain full corpus accounting (92/92, no skips),
+snapshot/profile accounting (3/3 and 1/1), all 99 snapshot hashes, Java 17 output,
+locks/strict verification, independent publication validation and both local consumers.
+The release preflight repeats these gates on the exact committed source.
 
-`verifyPublication` remains the single artifact inventory/structural verifier.
-It emits schema-1 `build/publication-manifest.json`: version, ten artifact records
-(module, group, artifact, version, role, suffix, repository-relative path, SHA-256),
-and a whole-staging fingerprint covering indexes/sidecars too. `publication.py`
-owns expected identities and strict parsing; candidate files never define names.
-Release comparisons compare the ten artifact hashes, excluding the staging
-fingerprint because repository indexes contain timestamps. Each staging read
-checks the fingerprint locally. Signing and hosted-byte checks still read their
-own inputs independently. Nix copies through this model and checks destination
-bytes; workflows only transport the accepted manifest.
-After acceptance, `python3 -B publishing/publication.py check` proves staging is
-unchanged without repeating the semantic verifier.
-The semantic verifier generates the independent consumer's ignored verification metadata only after
-checking staged bytes. External BC hashes remain pinned in its committed template.
-The default consumer remains an exclusive local-staging Totipo repository plus
-Central for BC; no Maven-local/composite/source fallback exists.
+## Owner-operated settings and separate activation
 
-## Protected Central publication and remote verification
+These are owner-owned prerequisites; public unauthenticated observations do not
+prove effective privileged authorization. J4S found the intended protections absent.
+Do not assume they are configured. No extra approval prompt is required by this
+design; respect actual organization/environment policies.
 
-After environment approval, the publishing job repeats source/version/current-main
-and tag/release absence checks, queries Central again, and rebuilds unsigned
-artifacts against preflight. Ordinary Gradle configuration still exposes only
-unsigned local staging. Central/signing remain gated by `-PcentralRelease=true`;
-no permanent enablement or property-name change is made.
+- Protect `main`: require reviewed pull requests and successful ordinary CI,
+  restrict direct changes, force pushes and deletion, and apply the intended
+  no-bypass policy to administrators and workflow actors.
+- Configure an active repository tag ruleset targeting `v*` that restricts
+  **updates and deletions**, without granting the publishing actor an immutability
+  bypass. Do not use a creation restriction that prevents the chosen Actions
+  token from creating a new release tag. Confirm effective rules permit first-time
+  creation but forbid subsequent updates/deletion for that same actor. If settings
+  cannot express this distinction for the selected token, stop before activation.
+- Configure the `release` environment to allow deployments only from protected
+  `main`. Respect any effective organization/environment protection; do not add
+  an otherwise unnecessary approval requirement.
+- Store `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`,
+  `SIGNING_IN_MEMORY_KEY`, and optional `SIGNING_IN_MEMORY_KEY_PASSWORD` /
+  `SIGNING_IN_MEMORY_KEY_ID` **only in that environment**, without repository-wide
+  fallback. Do not expose them to Verify Release or reusable-workflow inputs.
+- Keep default Actions permissions read-only. Allow explicit `contents:write`
+  only for the publishing job, reusable-call ceiling and GitHub finalization job;
+  verification itself has `contents:read`. No `secrets: inherit`.
+- Review qualification and effective settings with appropriate owner access, then
+  separately authorize activation. Change exactly the `publish-central` job guard
+  in `release.yml` from `${{ false && github.run_attempt == 1 }}` to
+  `${{ github.run_attempt == 1 }}`, and the `finalize` guard in
+  `verify-release.yml` from `${{ false }}` to `${{ success() }}`. Update the
+  structural activation tests in that same reviewed activation change. Preserve
+  all attempt, first-time reservation, source, signing-input and dependency guards.
 
-Before upload, it runs:
-
-```sh
-./gradlew --no-daemon --no-build-cache --no-configuration-cache \
-  -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
-```
-
-All 10 signing outputs must contain detached `.asc` signatures and their unsigned
-inputs must match the reviewed inventory. Then, after a last identity/absence check:
-
-```sh
-./gradlew --no-daemon --no-build-cache --no-configuration-cache \
-  -PcentralRelease=true publishAndReleaseToMavenCentral
-```
-
-This existing Vanniktech 0.37.0 task uploads, validates, and automatically releases
-through Central. **Do not manually click Publish for the preferred workflow.**
-No generic `publish`, legacy OSSRH or release-wrapper action is used. Gradle daemon
-and configuration cache are disabled around secrets; signing remains in memory.
-
-`verify-central` uses no Central credentials. It rebuilds/stages the same commit,
-compares to preflight, and polls `https://repo.maven.apache.org/maven2/` for up to
-40 minutes, backing off from 10 to 60 seconds. Every downloaded unsigned artifact
-must match its freshly built SHA-256 (**10/10**); detached signatures must be
-present for all 10 artifacts. Hash mismatch fails immediately. Signature presence
-is independently checked; this is not an independent OpenPGP trust certification.
-
-Then the existing independent consumer uses `-PremoteCentral`, and separately
-`-PremoteCentral -PpomOnly`, each with a **new temporary `GRADLE_USER_HOME`**.
-That mode configures only canonical Central, with no staged Totipo fallback,
-`mavenLocal()`, `includeBuild` or source substitution. It verifies exact NIO/core
-versions, BC **1.86 runtime-only**, no extra dependencies, compile smoke and
-runtime class loading. Strict metadata checks use the inventory already proven
-equal to Central. `verifyRepositorySelection` can inspect either configuration
-without resolving unpublished Totipo artifacts.
-
-## Tag, GitHub release and retry behavior
-
-Only after exact remote artifacts and both fresh consumers pass does the final job
-create/push an **annotated unsigned** `v<version>` at the dispatch commit, matching
-`v0.1.0` style. Only that job has `contents: write`; other jobs have `contents: read`.
-An existing tag at the exact commit is accepted; a different commit fails and is
-never moved or force-pushed. GitHub release creation uses the committed reviewed
-notes plus a temporary final source/spec/92-case provenance section. Existing
-releases must match the expected tag, title, non-draft/non-prerelease state and
-exact body; inconsistent releases fail rather than being overwritten.
-
-- Preflight/approval/signing failure: no Central upload occurs. Fix/review the
-  problem; dispatch again if code or the reviewed commit changes.
-- Central success followed by propagation/consumer failure: use **Re-run failed
-  jobs**. Successful publishing stays completed; only verification and downstream
-  jobs rerun. Do not publish again to solve propagation failures.
-- Publishing failure after upload may have started: on a rerun of **the same run**,
-  public GitHub attempt/job history must prove that its publishing step previously
-  started at the same commit. If either GAV is now visible, skip all upload and
-  proceed to strict verification of all 10 artifacts. Presence alone is never
-  proof of provenance. New dispatches reject existing versions.
-- Previous upload may have started but both POMs are still absent: stop rather than
-  risking duplicate deployment. Inspect Central Portal, allow propagation, then
-  retry the same run once visible. A stuck/failed unpublished deployment requires
-  human investigation; automation cannot infer safe deletion or overwrite.
-- Tag push succeeded but GitHub release creation failed: rerun the final failed
-  job. The exact source tag is reused, then the release is created or verified.
-- Any remote hash or inconsistent tag/release discrepancy: stop and investigate;
-  immutable Central versions and source tags must never be overwritten.
-
-Anonymous attempt-history reads deliberately preserve minimum GitHub permissions
-for this public repository. API/rate-limit failures stop safely. A future private
-repository would require a reviewed read-permission change. Release concurrency
-is `release` with cancellation disabled; keep it shared by any future release path.
-
-## Emergency fallback: manual operator procedure
-
-Use only after investigating the workflow problem and checking that no release run
-or Central deployment is in progress. Repeat all exact-source, absence, build,
-signing, inventory and remote-consumer gates above. Keep credentials outside the
-checkout as the same `ORG_GRADLE_PROJECT_*` environment variables; never use secret
-command-line arguments or secret-bearing repository properties/files. Use the
-same signing preflight and explicit **publishAndReleaseToMavenCentral** command.
-It automatically releases; do not mix it with manual Portal publishing. Tag and
-GitHub release remain after successful remote verification, bound to the reviewed
-commit and reviewed notes. Generic `publish` is rejected with the Central flag.
-
-The former `publishToMavenCentral` plus manual Portal Publish process is historical,
-not the preferred procedure. See [plugin Central guidance](https://vanniktech.github.io/gradle-maven-publish-plugin/central/).
-Desktop migration may begin only after independently downloadable Central artifacts;
-no desktop checkout is changed by the release workflow.
-
-A future `VERSION` change may trigger a separate **release-readiness validation**
-workflow without secrets, publication, tags or GitHub releases. It must not
-publish automatically merely because `VERSION` changed. The manually dispatched,
-protected workflow remains the irreversible step unless explicitly redesigned.
+No live tag/sign/upload/release test is part of J4B qualification. Successful live
+execution and effective protected-token behavior remain unverified until separately
+authorized activation/release work.

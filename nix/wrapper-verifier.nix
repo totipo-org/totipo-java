@@ -31,8 +31,7 @@ stdenvNoCC.mkDerivation {
     runHook preCheck
     ${jdk}/bin/java -cp test-classes:classes org.totipo.tooling.wrapper.WrapperVerifierTest \
       ${../gradle/wrapper/gradle-wrapper.jar} \
-      ${../gradle/wrapper/gradle-wrapper.properties} \
-      ${./verify-wrapper.py}
+      ${../gradle/wrapper/gradle-wrapper.properties}
     ${jdk}/bin/java -cp classes org.totipo.tooling.wrapper.WrapperVerifier \
       ${../gradle/wrapper/gradle-wrapper.jar} \
       ${../gradle/wrapper/gradle-wrapper.properties}
@@ -40,7 +39,13 @@ stdenvNoCC.mkDerivation {
   '';
   installPhase = ''
     runHook preInstall
-    touch "$out"
+    mkdir -p "$out/classes" "$out/bin"
+    cp -r classes/. "$out/classes/"
+    cat > "$out/bin/totipo-wrapper-verifier" <<SCRIPT
+    #!${stdenvNoCC.shell}
+    exec ${jdk}/bin/java -cp "$out/classes" org.totipo.tooling.wrapper.WrapperVerifier "\$@"
+    SCRIPT
+    chmod +x "$out/bin/totipo-wrapper-verifier"
     runHook postInstall
   '';
 }
