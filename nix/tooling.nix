@@ -37,9 +37,17 @@ let
     root = ../tooling;
     fileset = lib.fileset.fileFilter (file: file.hasExt "java") ../tooling/src;
   };
+  # Read-only integrity fixtures: exact pin and reviewed 99-record snapshot only.
+  releaseIntegritySource = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../SPEC_PIN.md
+      ../core/src/test/resources/totipo-spec/v1-pre-rc
+    ];
+  };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
-    version = "j2b";
+    version = "j3a";
     src = source;
     dontConfigure = true;
     buildPhase = ''
@@ -61,6 +69,7 @@ let
         -d test-classes @test-sources
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.StrictJsonTest
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.publication.PublicationTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.ReleaseTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.
       cat > Forbidden.java <<'JAVA'

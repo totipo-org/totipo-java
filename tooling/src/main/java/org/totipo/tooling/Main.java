@@ -8,6 +8,15 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws IOException {
+        if (args.length > 0 && args[0].equals("release")) {
+            try {
+                org.totipo.tooling.release.ReleaseInspectionCli.run(java.util.Arrays.copyOfRange(args, 1, args.length), System.getenv());
+            } catch (IOException | RuntimeException e) {
+                System.err.println("Release inspection failed: " + e.getMessage());
+                System.exit(1);
+            }
+            return;
+        }
         if (args.length > 0 && args[0].equals("publication")) {
             try {
                 org.totipo.tooling.publication.PublicationCli.run(java.util.Arrays.copyOfRange(args, 1, args.length));
