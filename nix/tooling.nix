@@ -47,7 +47,7 @@ let
   };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
-    version = "j3b2";
+    version = "j4a";
     src = source;
     dontConfigure = true;
     buildPhase = ''
@@ -75,6 +75,11 @@ let
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.PreparationApplicationTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${releaseIntegritySource} ${gitMinimal}/bin/git ${stdenvNoCC.shell}
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.TestResultsTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowEvidenceTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.CentralConsumersTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowPinsTest
+      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.ReleaseWorkflowIntegrationTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       # Synthetic source only: neither production sources nor Gradle enter this build.
       cat > Forbidden.java <<'JAVA'

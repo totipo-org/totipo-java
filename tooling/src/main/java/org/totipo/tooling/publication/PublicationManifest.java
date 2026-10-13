@@ -77,4 +77,17 @@ public record PublicationManifest(String version, String repositorySha256, List<
         return (Json.dumps(Map.of("schema", 1, "version", version, "repositorySha256", repositorySha256,
                 "artifacts", artifacts.stream().map(Artifact::json).toList()), true) + "\n").getBytes(StandardCharsets.UTF_8);
     }
+    /** Python json.dumps(sort_keys=True, separators=(",", ":")); same schema and record order. */
+    public String compact() throws IOException {
+        String json = new String(bytes(), StandardCharsets.UTF_8);
+        StringBuilder output = new StringBuilder();
+        boolean quoted = false, escaped = false;
+        for (char c : json.toCharArray()) {
+            if (quoted || !Character.isWhitespace(c)) output.append(c);
+            if (escaped) escaped = false;
+            else if (quoted && c == '\\') escaped = true;
+            else if (c == '"') quoted = !quoted;
+        }
+        return output.toString();
+    }
 }

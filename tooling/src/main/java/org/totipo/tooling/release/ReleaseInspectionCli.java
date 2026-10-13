@@ -12,6 +12,26 @@ public final class ReleaseInspectionCli {
         require(args.length > 0, "Missing release inspection command");
         for (String arg : args) require(!arg.isEmpty(), "Empty release argument");
         switch (args[0]) {
+            case "workflow-pins" -> {
+                require(args.length == 2, "Usage: release workflow-pins <root>");
+                WorkflowPins.check(Path.of(args[1]));
+                System.out.println("Reviewed workflow action pins passed");
+            }
+            case "test-results", "focused-test-results" -> {
+                require(args.length == 2, "Usage: release test-results|focused-test-results <root>");
+                System.out.println(TestResults.account(Path.of(args[1]), args[0].equals("focused-test-results")).summary());
+            }
+            case "inventory" -> {
+                require(args.length == 3, "Usage: release inventory <root> <repository>");
+                var inputs = ReleaseInputs.from(env);
+                System.out.println("inventory=" + AcceptedInventory.verify(Path.of(args[1]), Path.of(args[2]), inputs.version()).json());
+            }
+            case "compare" -> {
+                require(args.length == 4, "Usage: release compare <manifest> <repository> <version>");
+                AcceptedInventory.compare(Path.of(args[1]), Path.of(args[2]), args[3],
+                    ReleaseInputs.required(env, "EXPECTED_INVENTORY").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                System.out.println("10/10 rebuilt artifact hashes match preflight");
+            }
             case "inputs" -> {
                 require(args.length == 1, "inputs takes no arguments");
                 var inputs = ReleaseInputs.from(env);
