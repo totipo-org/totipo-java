@@ -110,7 +110,6 @@ build changes affecting that boundary, run once when stable:
 ```sh
 ./gradlew test build javadoc verifyPublication consumerSmoke
 "$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
-"$TOTIPO_PUBLICATION_TOOL" release workflow-pins "$PWD"
 "$TOTIPO_PUBLICATION_TOOL" publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
 ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
@@ -121,16 +120,22 @@ Tooling changes also require direct JDK 25 compilation and all permanent runners
 listed in `nix/tooling.nix`, with only pinned Jackson Core on the classpath, plus
 JDK-only wrapper tests. `TOTIPO_TOOLING_TEST_CLASSPATH` names those independently
 compiled test/main classes and Jackson. Nix runs these guardrails as a separate
-check/dependency. The workflow-pin check must inspect the full checkout because
-production qualification's source projection deliberately excludes `.github`.
+check/dependency. GitHub's configured native policy requires immutable full-commit
+SHA references for external actions; do not maintain a duplicate local registry.
 
 The manifest check rereads staged bytes and proves the repository is unchanged
-since `verifyPublication` accepted it; it does not repeat semantic verification.
+since `verifyPublication` accepted it; it does not repeat semantic verification. Each newly produced staging
+repository must pass `verifyPublication` once before inventory, comparison, signing
+or remote verification; those operations authenticate current bytes against the
+accepted schema-1 manifest, which is trusted job-local output, not authorization
+from an arbitrary supplied hash list.
 The POM-only consumer remains an independent current gate; `consumerSmoke`
 exercises module metadata. Run full accounting immediately after the full Java
-suite, before any focused module tests. Preserve its evidence. The authoritative
-Nix suite additionally runs focused snapshot/profile integrity accounting and
-checks all snapshot hashes; those checks remain required there. For release
+suite. Preserve its evidence before diagnostic focused tests or clean. Full-suite
+accounting requires successful nonzero snapshot/profile suites and the conformance
+execution assertion, with no failures/errors/skips. The full tests already validate
+the complete snapshot and requirements profile; no focused integrity rerun or
+separate shell corpus hashing is required. For release
 helper-only changes, use the relevant standalone Java baseline/focused tests and full
 standalone tooling guardrails at the stable boundary, then final Nix if included; Java
 coverage is required if the change also affects Java/publication behavior.
@@ -220,7 +225,9 @@ GitHub Actions owns release orchestration; standalone Java owns focused identity
 artifact, tag-reservation and create-or-validate checks. Repository Python release
 tooling and migration oracles are removed. Do not recreate history-based upload
 recovery or a coordinator. At most one authorized Gradle Central invocation per
-version follows first-time annotated tag reservation; internal plugin HTTP retries
+version follows successful signing/input acceptance, producer/Sign freezing and
+first-time annotated tag reservation, then fresh source/tag/artifact binding.
+Signing failure must stop before reservation. Internal plugin HTTP retries
 are accepted without claiming exactly-once delivery. Existing tags prohibit ordinary
 republication. Use Verify Release for independently rerunnable verification.
 

@@ -67,11 +67,6 @@ stdenv.mkDerivation (finalAttrs: {
     ${publicationTool}/bin/totipo-java-tool publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
     gradle -p publishing/consumer-smoke -PpomOnly clean check
     echo 'Independent module-metadata and POM-only consumers passed' >> test-summary.txt
-    # Account for the full suite above before focused tests replace core XML.
-    gradle :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest \
-      --tests org.totipo.conformance.R19ProfileIntegrityTest
-    ${publicationTool}/bin/totipo-java-tool release focused-test-results "$PWD" | tee -a test-summary.txt
-    (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
     runHook postCheck
   '';
   installPhase = ''

@@ -85,10 +85,9 @@ jobs:
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
           printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
             "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper and actual workflow guardrails
+      - name: Verify wrapper identity
         run: |
           totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-          totipo-java-tool release workflow-pins "$PWD"
       - name: Authenticate existing annotated tag and reviewed source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -158,10 +157,9 @@ jobs:
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
           printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
             "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper and actual workflow guardrails
+      - name: Verify wrapper identity
         run: |
           totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-          totipo-java-tool release workflow-pins "$PWD"
       - name: Create or validate exact GitHub Release from authenticated existing tag
         env:
           GH_TOKEN: ${{ github.token }}

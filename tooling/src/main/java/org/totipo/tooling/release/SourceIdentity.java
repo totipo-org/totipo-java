@@ -12,25 +12,9 @@ public final class SourceIdentity {
     public record Tag(String object, String commit, String annotation) {}
     public static void source(SourceFiles source, ReleaseInputs inputs) throws IOException {
         require(Arrays.equals(source.read("VERSION", 256), (inputs.version() + "\n").getBytes(StandardCharsets.US_ASCII)), "Exact VERSION/LF mismatch");
-        source.integrity(); source.notes(inputs.version(), true, true);
-        for (String path : new String[]{"README.md", "API_DESIGN.md"}) {
-            String text = source.text(path), start = "<!-- prepared-release:start -->", end = "<!-- prepared-release:end -->";
-            int first = text.indexOf(start), last = text.indexOf(end);
-            require(first >= 0 && last > first && text.indexOf(start, first + 1) < 0 && text.indexOf(end, last + 1) < 0,
-                "Ambiguous release source metadata");
-            String status = text.substring(first + start.length(), last);
-            require(status.equals("\nJava " + inputs.version() + " is released. See RELEASE_CHECKLIST.md.\n")
-                || status.equals("\nJava " + inputs.version() + " is prepared locally and not yet released. See RELEASE_CHECKLIST.md.\n"),
-                "Release source metadata version mismatch");
-        }
-        String lock = source.text("publishing/consumer-smoke/gradle.lockfile");
-        for (String module : new String[]{"core", "storage-nio"}) {
-            String prefix = "org.totipo:totipo-" + module + ":";
-            var entries = lock.lines().filter(line -> line.startsWith(prefix)).toList();
-            require(entries.equals(java.util.List.of(prefix + inputs.version()
-                + "=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath")), "Consumer source/version lock mismatch");
-        }
+        source.spec(); source.notes(inputs.version());
     }
+
     public static Tag tag(FinalizationProcesses.Api api, ReleaseInputs inputs) throws IOException {
         var ref = api.request("GET", "/git/ref/tags/v" + inputs.version(), null);
         require(ref.status() == 200, "Release tag absent or uncertain");

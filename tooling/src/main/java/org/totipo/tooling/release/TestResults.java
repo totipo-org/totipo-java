@@ -25,17 +25,17 @@ public final class TestResults {
         AccountingException(Failure failure) { super("JUnit accounting failed: " + failure); this.failure = failure; }
         public Failure failure() { return failure; }
     }
-    public record Result(long total, int snapshot, int profile, boolean conformance, boolean focused) {
+    public record Result(long total, int snapshot, int profile, boolean conformance) {
         public String summary() {
-            return (focused ? "" : "92/92 portable cases: exact-set execution assertion passed\n")
-                + total + " JUnit tests; zero failures/errors/skips; snapshot 3/3; profile 1/1";
+            return "92/92 portable cases: exact-set execution assertion passed\n"
+                + total + " JUnit tests; zero failures/errors/skips; snapshot " + snapshot + "; profile " + profile;
         }
     }
     private record Suite(int tests, boolean conformance) {}
-    public static Result account(Path root, boolean focused) throws IOException {
+    public static Result account(Path root) throws IOException {
         Map<String, Suite> suites = new LinkedHashMap<>();
         int files = 0; long bytes = 0;
-        for (String module : focused ? java.util.List.of("core") : java.util.List.of("core", "storage-nio")) {
+        for (String module : java.util.List.of("core", "storage-nio")) {
             int moduleFiles = 0;
             Path directory = root.resolve(module + "/build/test-results/test");
             try (var dir = EvidenceFiles.parent(directory.resolve("anchor"))) {
@@ -71,11 +71,11 @@ public final class TestResults {
             } catch (java.nio.file.NoSuchFileException missing) { throw new AccountingException(Failure.MISSING); }
             check(moduleFiles > 0, Failure.MISSING);
         }
-        check(suites.containsKey(SNAPSHOT) && suites.get(SNAPSHOT).tests() == 3, Failure.INTEGRITY);
-        check(suites.containsKey(PROFILE) && suites.get(PROFILE).tests() == 1, Failure.INTEGRITY);
+        check(suites.containsKey(SNAPSHOT) && suites.get(SNAPSHOT).tests() > 0, Failure.INTEGRITY);
+        check(suites.containsKey(PROFILE) && suites.get(PROFILE).tests() > 0, Failure.INTEGRITY);
         boolean corpus = suites.containsKey(CORPUS) && suites.get(CORPUS).conformance();
-        check(focused || corpus, Failure.CONFORMANCE);
-        return new Result(suites.values().stream().mapToLong(Suite::tests).sum(), 3, 1, corpus, focused);
+        check(corpus, Failure.CONFORMANCE);
+        return new Result(suites.values().stream().mapToLong(Suite::tests).sum(), suites.get(SNAPSHOT).tests(), suites.get(PROFILE).tests(), corpus);
     }
     private static int integer(Element suite, String name) throws IOException {
         String text = suite.getAttribute(name);

@@ -17,15 +17,15 @@ public final class TestResultsTest {
     }
     static Path core(Path root, String name) { return root.resolve("core/build/test-results/test/TEST-" + name + ".xml"); }
     static void write(Path file, String bytes) throws IOException { Files.createDirectories(file.getParent()); Files.writeString(file, bytes); }
-    static void fixture(Path root, boolean focused) throws IOException {
+    static void fixture(Path root) throws IOException {
         write(core(root, "snapshot"), suite(TestResults.SNAPSHOT, 3));
         write(core(root, "profile"), suite(TestResults.PROFILE, 1));
-        if (!focused) {
+        {
             write(core(root, "corpus"), suite(TestResults.CORPUS, 1));
             write(root.resolve("storage-nio/build/test-results/test/TEST-storage.xml"), suite("storage", 2));
         }
     }
-    static final List<String> CASES = List.of("full", "focused", "missing-xml", "malformed", "missing-name", "duplicate",
+    static final List<String> CASES = List.of("full", "flexible-counts", "missing-xml", "malformed", "missing-name", "duplicate",
         "missing-tests", "bad-tests", "failure", "error", "skip", "missing-snapshot", "wrong-snapshot",
         "missing-profile", "wrong-profile", "missing-assertion", "root", "entity", "oversize", "empty", "incomplete",
         "missing-errors", "case-count", "embedded-failure", "integer-sign", "dtd");
@@ -33,7 +33,8 @@ public final class TestResultsTest {
         Path path = core(root, "snapshot");
         String xml = Files.readString(path);
         switch (scenario) {
-            case "full", "focused" -> { }
+            case "full" -> { }
+            case "flexible-counts" -> { write(path, suite(TestResults.SNAPSHOT, 2)); write(core(root, "profile"), suite(TestResults.PROFILE, 2)); }
             case "missing-xml" -> Files.delete(path);
             case "malformed" -> write(path, "<testsuite");
             case "missing-name" -> write(path, xml.replace("name=\"" + TestResults.SNAPSHOT + "\"", ""));
@@ -46,9 +47,9 @@ public final class TestResultsTest {
             case "skip" -> write(path, xml.replace("skipped=\"0\"", "skipped=\"1\""));
             case "missing-errors" -> write(path, xml.replace("errors=\"0\"", ""));
             case "missing-snapshot" -> write(path, suite("other", 3));
-            case "wrong-snapshot" -> write(path, suite(TestResults.SNAPSHOT, 2));
+            case "wrong-snapshot" -> write(path, suite(TestResults.SNAPSHOT, 0));
             case "missing-profile" -> Files.delete(core(root, "profile"));
-            case "wrong-profile" -> write(core(root, "profile"), suite(TestResults.PROFILE, 2));
+            case "wrong-profile" -> write(core(root, "profile"), suite(TestResults.PROFILE, 0));
             case "missing-assertion" -> write(core(root, "corpus"), suite(TestResults.CORPUS, 1).replace("everyImplementedCaseExecutesWithoutSkipping", "unrelated"));
             case "root" -> write(path, xml.replace("testsuite", "other"));
             case "entity" -> write(path, "<!DOCTYPE testsuite [<!ENTITY attack SYSTEM 'https://invalid.example/never'>]>" + xml.replace("case0", "&attack;"));
@@ -61,9 +62,9 @@ public final class TestResultsTest {
             default -> throw new AssertionError(scenario);
         }
     }
-    static String outcome(Path root, boolean focused) throws IOException {
+    static String outcome(Path root) throws IOException {
         try {
-            var result = TestResults.account(root, focused);
+            var result = TestResults.account(root);
             return "PASS\t" + result.total() + "\t" + result.snapshot() + "\t" + result.profile() + "\t" + result.conformance();
         } catch (TestResults.AccountingException failure) { return "FAIL\t" + failure.failure(); }
     }
@@ -72,18 +73,18 @@ public final class TestResultsTest {
         Files.createDirectories(export);
         try {
             for (String name : CASES) {
-                Path root = export.resolve(name); boolean focused = name.equals("focused");
-                fixture(root, focused); mutate(root, name);
-                String result = outcome(root, focused);
-                ok(result.startsWith(name.equals("full") || focused ? "PASS" : "FAIL"));
+                Path root = export.resolve(name);
+                fixture(root); mutate(root, name);
+                String result = outcome(root);
+                ok(result.startsWith(name.equals("full") || name.equals("flexible-counts") ? "PASS" : "FAIL"));
                 if (name.equals("full")) ok(result.equals("PASS\t7\t3\t1\ttrue"));
-                if (focused) ok(result.equals("PASS\t4\t3\t1\tfalse"));
+                if (name.equals("flexible-counts")) ok(result.equals("PASS\t7\t2\t2\ttrue"));
             }
             Path extra = Files.createTempDirectory("totipo-xml-limits-");
             try {
-                fixture(extra, true);
+                fixture(extra);
                 for (int i = 0; i < TestResults.MAX_FILES; i++) write(core(extra, "limit-" + i), suite("unique" + i, 0));
-                ok(outcome(extra, true).equals("FAIL\tLIMIT"));
+                ok(outcome(extra).equals("FAIL\tLIMIT"));
             } finally { AuthorizationTest.remove(extra); }
             System.out.println("TestResultsTest PASS: " + assertions + " assertions; " + CASES.size() + " accounting fixtures");
         } finally { AuthorizationTest.remove(export); }

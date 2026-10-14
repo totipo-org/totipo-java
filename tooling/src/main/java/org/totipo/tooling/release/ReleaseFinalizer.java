@@ -18,7 +18,7 @@ public final class ReleaseFinalizer {
         public static Expected read(SourceFiles source, ReleaseInputs inputs) throws IOException {
             source.spec();
             require(source.text("VERSION").equals(inputs.version() + "\n"), "VERSION differs from reviewed identity");
-            String notes = source.notes(inputs.version(), true, true);
+            String notes = source.notes(inputs.version());
             return new Expected(inputs, rstrip(notes) + "\n\n### Release provenance\n\n- Java source commit: `" + inputs.commit()
                     + "`\n- Totipo v1/r19 spec commit: `" + SourceFiles.SPEC_COMMIT
                     + "`\n- Portable corpus: 92/92 executed, none deferred.\n");

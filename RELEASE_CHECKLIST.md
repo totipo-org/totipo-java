@@ -1,6 +1,6 @@
 # Totipo Java release checklist
 
-**J4B is implemented for review, with live mutations disabled.** The procedure
+**Release tooling is implemented for review, with live mutations disabled.** The procedure
 below is the intended experience after a separately authorized activation change.
 Merging these workflows does not activate tag creation, signing, Central upload
 or GitHub Release creation.
@@ -9,9 +9,8 @@ or GitHub Release creation.
 
 1. Prepare `VERSION` (exact version plus LF), both Totipo self-coordinates in
    `publishing/consumer-smoke/gradle.lockfile`, and
-   `review/V<version-with-dots-as-underscores>_RELEASE_NOTES.md`. Notes begin with
-   `## v<version>` and contain completed Highlights, Compatibility and scope, and
-   Validation sections. Review source metadata and README/API release status.
+   `review/V<version-with-dots-as-underscores>_RELEASE_NOTES.md`. Notes must have a title identifying the version, a nonempty body, and no unfinished
+   TODO/TBD/FIXME placeholders. Review release metadata.
    Keep the exact r19 specification pin and complete snapshot intact.
 2. Run the applicable [qualification ladder](AGENTS.md#milestone-qualification-ladder)
    and the separate release reproducibility procedure below. Review and commit
@@ -19,7 +18,8 @@ or GitHub Release creation.
 3. Confirm ordinary CI succeeds for that commit.
 4. Open GitHub Actions → **Release**, select `main`, enter the version and its
    exact lowercase 40-character reviewed commit SHA, then start the workflow.
-5. Expect qualification, first-time annotated tag reservation, signing, one
+5. Expect qualification, signing and input acceptance, first-time annotated tag
+   reservation, one
    Gradle Maven Central publication invocation, independent Central verification,
    both Central consumers, and automatic GitHub Release creation. Intervene only
    on failure. No manual tag, Portal promotion or GitHub Release creation is needed.
@@ -31,7 +31,10 @@ Source and artifact identity always remain bound to the original commit.
 
 The tag `v<version>` is an unsigned annotated tag at the reviewed commit, with
 annotation `totipo-java <version>` followed by LF. It permanently reserves the
-version **before** signing/upload. Existing tags always prevent ordinary
+version **after** successful signing/input acceptance and freezing, **before**
+upload. Signing failure leaves it unreserved. The final pre-reservation source
+check is followed by create-only reservation, tag readback and fresh artifact/
+signature binding; upload cannot rebuild or re-sign accepted inputs. Existing tags always prevent ordinary
 publication, even on a new dispatch at attempt 1 and even if both Central POMs
 return 404. Workflow and publishing-job reruns cannot authorize publication.
 
@@ -54,7 +57,7 @@ checks Central bytes and all ten detached-signature files, executes both remote
 consumers with distinct fresh external Gradle homes, and creates or validates the
 GitHub Release. It needs no earlier Actions artifact, Maven credentials, signing
 secret or `release` environment. It cannot upload to Central or create a missing tag.
-While J4B is inert, read-only verification can run but GitHub finalization is skipped.
+While mutation guards remain disabled, read-only verification can run but GitHub finalization is skipped.
 
 | Failure | Maintainer response |
 | --- | --- |
@@ -100,6 +103,9 @@ A human can materialize it with `nix build .#tooling --no-update-lock-file --no-
 and set `TOTIPO_PUBLICATION_TOOL="$PWD/result/bin/totipo-java-tool"` before direct
 host Gradle publication checks. This is tooling materialization, not a second
 qualification gate. In CI the pinned runtime supplies the launcher and JDK.
+Each new staging repository receives one complete semantic acceptance. Inventory,
+comparison, signing and remote checks then rehash accepted bytes at use boundaries.
+Never treat an arbitrary manifest as proof of semantic acceptance.
 
 For explicit release-source preparation, retain the normal/offline comparison;
 preserve full XML/accounting before any clean or focused run replaces it:
@@ -121,16 +127,18 @@ Require all ten hashes to match: binary/source/Javadoc JARs, POMs and module
 metadata for both modules. Each build's staging fingerprint must validate locally;
 do not compare ephemeral Maven repository indexes across builds. Do not normalize
 or omit differing artifact bytes. Retain full corpus accounting (92/92, no skips),
-snapshot/profile accounting (3/3 and 1/1), all 99 snapshot hashes, Java 17 output,
+nonzero successful snapshot/profile suite accounting, all 99 snapshot hashes
+validated by the full library tests, Java 17 output,
 locks/strict verification, independent publication validation and both local consumers.
 The release preflight repeats these gates on the exact committed source.
 
 ## Owner-operated settings and separate activation
 
-These are owner-owned prerequisites; public unauthenticated observations do not
-prove effective privileged authorization. J4S found the intended protections absent.
-Do not assume they are configured. No extra approval prompt is required by this
-design; respect actual organization/environment policies.
+The owner reports protections configured, including GitHub's native full-commit
+SHA policy for external actions. Source regression tests do not independently
+prove effective privileged settings or hosted secrets. Confirm these effective
+settings before separate activation; no additional successful-path manual action
+is introduced.
 
 - Protect `main`: require reviewed pull requests and successful ordinary CI,
   restrict direct changes, force pushes and deletion, and apply the intended
@@ -159,6 +167,6 @@ design; respect actual organization/environment policies.
   structural activation tests in that same reviewed activation change. Preserve
   all attempt, first-time reservation, source, signing-input and dependency guards.
 
-No live tag/sign/upload/release test is part of J4B qualification. Successful live
+No live tag/upload/release test is part of routine qualification. Successful live
 execution and effective protected-token behavior remain unverified until separately
 authorized activation/release work.

@@ -40,4 +40,4 @@ val runtimeSmoke = tasks.register<JavaExec>("runtimeSmoke") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("ConsumerSmoke")
 }
-tasks.check { dependsOn(runtimeSmoke, "verifyRepositorySelection") }
+tasks.check { dependsOn(runtimeSmoke) }

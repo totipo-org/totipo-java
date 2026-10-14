@@ -35,13 +35,36 @@ public final class ReleaseTest {
     }
     static void fixture(Path root) throws IOException {
         write(root, "VERSION", "0.2.0\n");
-        for (String path : new String[]{"README.md", "API_DESIGN.md"}) write(root, path,
-            "<!-- prepared-release:start -->\nJava 0.2.0 is released. See RELEASE_CHECKLIST.md.\n<!-- prepared-release:end -->\n");
-        write(root, "publishing/consumer-smoke/gradle.lockfile", "org.totipo:totipo-core:0.2.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath\n"
-            + "org.totipo:totipo-storage-nio:0.2.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath\n");
         write(root, "review/V0_2_0_RELEASE_NOTES.md", "## v0.2.0\n\n### Highlights\nReviewed\n### Compatibility and scope\nReviewed\n### Validation\nReviewed\n");
     }
+    static void gitIdentity(Path executable) throws Exception {
+        Path root = Files.createTempDirectory("source-git-test-");
+        try {
+            var git = new GitQueries(root, executable);
+            git.run("init", "--initial-branch=main");
+            git.run("-c", "user.name=Fixture", "-c", "user.email=fixture@invalid.example", "commit", "--allow-empty", "-m", "initial");
+            String reviewed = git.run("rev-parse", "HEAD").strip();
+            var inputs = new ReleaseInputs("0.2.0", reviewed);
+            // A fresh-job acquisition ref must exist; the helper cannot silently use origin/main.
+            reject(() -> git.source(inputs));
+            git.run("update-ref", "refs/remotes/release/main", reviewed);
+            git.run("config", "color.ui", "false"); // harmless local configuration is accepted
+            git.source(inputs);
+            reject(() -> git.source(new ReleaseInputs("0.2.0", "a".repeat(40))));
+            write(root, "dirty", "untracked"); reject(() -> git.source(inputs)); Files.delete(root.resolve("dirty"));
+            git.run("-c", "user.name=Fixture", "-c", "user.email=fixture@invalid.example", "commit", "--allow-empty", "-m", "next");
+            String next = git.run("rev-parse", "HEAD").strip();
+            // A stale acquired main that does not reach the reviewed commit fails.
+            reject(() -> git.source(new ReleaseInputs("0.2.0", next)));
+            git.run("update-ref", "refs/remotes/release/main", next);
+            git.source(new ReleaseInputs("0.2.0", next));
+            git.run("checkout", "--orphan", "untrusted");
+            git.run("-c", "user.name=Fixture", "-c", "user.email=fixture@invalid.example", "commit", "--allow-empty", "-m", "unrelated");
+            reject(() -> git.source(new ReleaseInputs("0.2.0", git.run("rev-parse", "HEAD").strip())));
+        } finally { AuthorizationTest.remove(root); }
+    }
     public static void main(String[] args) throws Exception {
+        gitIdentity(Path.of(args[1]));
         String sha = "a".repeat(40);
         var inputs = new ReleaseInputs("0.2.0", sha);
         inputs.initial(Map.of("DISPATCH_REF", "refs/heads/main", "DISPATCH_SHA", sha));
@@ -54,24 +77,20 @@ public final class ReleaseTest {
         try {
             fixture(root); Path canonical = Path.of(args[0]);
             Files.copy(canonical.resolve("SPEC_PIN.md"), root.resolve("SPEC_PIN.md")); writable(root.resolve("SPEC_PIN.md"));
-            copy(canonical.resolve(SourceFiles.SNAPSHOT), root.resolve(SourceFiles.SNAPSHOT));
             var source = new SourceFiles(root); SourceIdentity.source(source, inputs);
             for (String version : new String[]{"0.2.0", "0.2.0\r\n", "0.3.0\n", "0.2.0\n\n"}) {
                 write(root, "VERSION", version); reject(() -> SourceIdentity.source(source, inputs));
             }
             write(root, "VERSION", "0.2.0\n");
-            String metadata = source.text("README.md");
-            write(root, "README.md", metadata.replace("0.2.0", "0.1.0")); reject(() -> SourceIdentity.source(source, inputs));
-            write(root, "README.md", metadata);
             String notes = source.text(SourceFiles.notesPath("0.2.0"));
-            for (String bad : new String[]{notes.replace("0.2.0", "0.1.0"), notes + "TODO:", notes.replace("### Validation", "### Other")}) {
+            for (String bad : new String[]{notes.replace("0.2.0", "0.1.0"), notes + "TODO:", "", "# v0.3.0\nCompatible with v0.2.0", "# v0.2.0\n", notes + "TBD"}) {
                 write(root, SourceFiles.notesPath("0.2.0"), bad); reject(() -> SourceIdentity.source(source, inputs));
             }
             write(root, SourceFiles.notesPath("0.2.0"), notes);
-            String lock = source.text("publishing/consumer-smoke/gradle.lockfile");
-            write(root, "publishing/consumer-smoke/gradle.lockfile", lock.replace("0.2.0", "0.1.0")); reject(() -> SourceIdentity.source(source, inputs));
-            write(root, "publishing/consumer-smoke/gradle.lockfile", lock);
-            Files.writeString(root.resolve("SPEC_PIN.md"), "wrong"); reject(source::integrity);
+            write(root, SourceFiles.notesPath("0.2.0"), "# Release v0.2.0\nReady\n");
+            // Version identity is required; section names and heading syntax are not.
+            SourceIdentity.source(source, inputs);
+            Files.writeString(root.resolve("SPEC_PIN.md"), "wrong"); reject(source::spec);
             reject(() -> source.read("../VERSION", 100)); reject(() -> source.read("VERSION", 2));
             Files.createSymbolicLink(root.resolve("link"), root.resolve("VERSION")); reject(() -> source.read("link", 100));
         } finally { AuthorizationTest.remove(root); }

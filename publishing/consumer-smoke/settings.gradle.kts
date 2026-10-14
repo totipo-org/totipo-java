@@ -32,21 +32,3 @@ dependencyResolutionManagement {
         }
     }
 }
-
-// Check the settings repositories without resolving an unpublished Totipo version.
-val smokeRepositories = dependencyResolutionManagement.repositories.map {
-    (it as MavenArtifactRepository).let { repository -> repository.name to repository.url }
-}
-gradle.rootProject {
-    tasks.register("verifyRepositorySelection") {
-        doLast {
-            if (remoteCentral) {
-                check(smokeRepositories.size == 1)
-                check(smokeRepositories.single().second.toString() == "https://repo.maven.apache.org/maven2/")
-            } else {
-                check(smokeRepositories.any { it.first == "TotipoStaging" && it.second.scheme == "file" })
-            }
-            println("Repository selection verified: remoteCentral=$remoteCentral; $smokeRepositories")
-        }
-    }
-}

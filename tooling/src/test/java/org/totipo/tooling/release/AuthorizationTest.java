@@ -49,6 +49,18 @@ public final class AuthorizationTest {
     }
     static void inventory(Path root) throws Exception {
         byte[] original = Files.readAllBytes(manifest(root));
+        Files.delete(manifest(root));
+        reject(() -> AcceptedArtifacts.fresh(manifest(root), staging(root), VERSION));
+        Files.write(manifest(root), original);
+        ReleaseTest.write(root, "VERSION", VERSION + "\n");
+        var env = Map.of("REQUESTED_VERSION", VERSION, "REQUESTED_COMMIT", "a".repeat(40));
+        ReleaseInspectionCli.run(new String[]{"inventory", root.toString(), staging(root).toString()}, env);
+        ReleaseTest.write(root, "VERSION", "0.3.0\n");
+        reject(() -> ReleaseInspectionCli.run(new String[]{"inventory", root.toString(), staging(root).toString()}, env));
+        ReleaseTest.write(root, "VERSION", VERSION + "\n");
+        Path supplied = root.resolve("supplied.json"); Files.write(supplied, original);
+        reject(() -> ReleaseInspectionCli.run(new String[]{"compare", root.toString(), staging(root).toString(), supplied.toString()}, env));
+        Files.delete(supplied);
         check(AcceptedArtifacts.inventory(manifest(root), staging(root), VERSION).size() == 10);
         AcceptedArtifacts.compare(manifest(root), staging(root), VERSION, original); assertions++;
         // Field and artifact ordering do not define identity.

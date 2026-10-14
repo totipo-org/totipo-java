@@ -19,7 +19,7 @@ Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 
 Release preparation is reviewed source editing, not an automated mutation
 transaction. The intended post-activation release process is one manual Actions
-dispatch bound to exact source, first-time tag reservation before one Gradle
+dispatch bound to exact source, signing/input acceptance then first-time tag reservation before one Gradle
 publication invocation, independently repeatable verification and exact GitHub
 Release creation/validation. J4B keeps mutation jobs disabled pending separate
 owner activation. See RELEASE_CHECKLIST.md. This release policy is separate from

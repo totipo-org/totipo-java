@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import static org.totipo.tooling.release.SourceFiles.require;
 
-/** Optional anonymous read-only adapter. Never used by the J3A CLI or qualification tests. */
+/** Anonymous canonical Central acquisition with bounded bodies, deadlines and no redirects. */
 public final class HttpQueries implements RemoteReleaseState.Http, RemoteArtifactVerifier.Transport {
     public static final Duration DEADLINE = Duration.ofSeconds(20);
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(DEADLINE)
@@ -30,15 +30,7 @@ public final class HttpQueries implements RemoteReleaseState.Http, RemoteArtifac
             require(m.matches() && ReleaseInputs.validVersion(m.group(2)), "Unapproved Central coordinate endpoint");
             return 65_536;
         }
-        require("api.github.com".equals(uri.getHost()), "Unapproved inspection host");
-        var release = Pattern.compile("/repos/([A-Za-z0-9_-]+)/([A-Za-z0-9_.-]+)/releases/tags/v([^/]+)").matcher(path);
-        require(release.matches() && !SetNames.invalidRepositoryName(release.group(2))
-                && ReleaseInputs.validVersion(release.group(3)) && uri.getQuery() == null, "Invalid release endpoint");
-        return RemoteReleaseState.GITHUB.bytes();
-    }
-    private static final class SetNames {
-        private SetNames() {}
-        static boolean invalidRepositoryName(String value) { return value.equals(".") || value.equals(".."); }
+        throw new IOException("Unapproved inspection host");
     }
     @Override public RemoteReleaseState.Response get(URI uri) throws IOException {
         int limit = endpointLimit(uri);
@@ -55,7 +47,7 @@ public final class HttpQueries implements RemoteReleaseState.Http, RemoteArtifac
             throw new IOException("Inspection request failed or deadline exceeded");
         } finally { future.cancel(true); }
     }
-    /** Separate canonical artifact acquisition; existing inspection endpoint rules stay unchanged. */
+    /** Canonical artifact acquisition, separate from coordinate-absence inspection. */
     static boolean artifactEndpoint(URI uri) throws IOException {
         require("https".equals(uri.getScheme()) && "repo.maven.apache.org".equals(uri.getHost())
                 && uri.getPort() == -1 && uri.getUserInfo() == null && uri.getQuery() == null

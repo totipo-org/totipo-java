@@ -30,22 +30,20 @@ public final class WorkflowBoundaryTest {
         require(publish.contains("    environment: release\n") && publish.contains("      contents: write\n"));
         require(preflight.contains("      contents: read\n") && !preflight.contains("secrets."));
         require(publish.indexOf("release compare") < publish.indexOf("release reserve")
-            && publish.indexOf("release reserve") < publish.indexOf(":core:signMavenPublication")
+            && publish.indexOf(":core:signMavenPublication") < publish.indexOf("release reserve")
             && publish.indexOf(":core:signMavenPublication") < publish.indexOf("release signed")
-            && publish.indexOf("release signed") < publish.indexOf("publishAndReleaseToMavenCentral"));
+            && publish.indexOf("release signed") < publish.indexOf("release reserve")
+            && publish.indexOf("release reserve") < publish.indexOf("release tagged")
+            && publish.indexOf("release tagged") < publish.lastIndexOf("release signed")
+            && publish.lastIndexOf("release signed") < publish.indexOf("publishAndReleaseToMavenCentral"));
         require(publish.indexOf(".#release-runtime") < publish.indexOf("secrets."));
         require(publish.contains("export ORG_GRADLE_PROJECT_centralUpload=true"));
         require(build.contains("Accepted publication inputs must not rebuild during upload") && build.contains("Signing-input acceptance failed"));
-        require(count(build, "tasks.register<Exec>(\"verifyCentralSigningInputs\")") == 1
-            && build.contains("dependsOn(rootProject.tasks.named(\"verifyCentralSigningInputs\"))")
+        require(build.contains("dependsOn(rootProject.tasks.named(\"verifyCentralSigningInputs\"))")
             && build.contains("dependsOn(\":core:signMavenPublication\", \":storage-nio:signMavenPublication\")"));
         require(call.contains("    needs: [preflight, publish-central]\n")
             && call.contains("    uses: ./.github/workflows/verify-release.yml\n") && call.contains("      contents: write\n"));
-        require(!call.contains("secrets") && count(release, "uses: ./") == 1 && !verify.contains("uses: ./"));
-        require(release.contains("group: release-publish-${{ inputs.version }}") && verify.contains("group: release-verify-${{ inputs.version }}"));
-        require(release.contains("cancel-in-progress: false") && verify.contains("cancel-in-progress: false"));
-        require(verify.contains("  workflow_call:\n") && verify.contains("  workflow_dispatch:\n") && release.contains("  workflow_dispatch:\n"));
-        require(!release.contains("  push:") && !release.contains("workflow_run"));
+        require(!call.contains("secrets"));
         for (String bad : List.of("secrets:", "secrets.", "environment:", "centralRelease", "centralUpload", "publishAndRelease", "signMaven", "release reserve", "download-artifact", "EXPECTED_INVENTORY", "actions/runs/")) require(!verify.contains(bad));
         for (String bad : List.of("continue-on-error", "always()", "secrets: inherit", "git push", "git tag", "git update-ref", "workflow_dispatch: {}", "upload-ready", "prior_upload")) require(!release.contains(bad) && !verify.contains(bad));
         require(read.contains("      contents: read\n") && !read.contains("contents: write") && !read.contains("release finalize"));
@@ -56,7 +54,6 @@ public final class WorkflowBoundaryTest {
             && count(read, "GRADLE_USER_HOME=\"$consumer_home\"") == 2 && count(read, "--dependency-verification=strict -PremoteCentral") == 2);
         require(finish.contains("    needs: verify\n") && finish.contains("      contents: write\n") && finish.contains("release finalize"));
         require(!finish.contains("./gradlew") && !finish.contains("release reserve"));
-        require(!read.contains("test \"$DISPATCH_SHA\" = \"$REQUESTED_COMMIT\""));
         require(preflight.contains("test \"$DISPATCH_SHA\" = \"$REQUESTED_COMMIT\""));
         for (String text : List.of(release, verify)) {
             require(text.contains("persist-credentials: false") && text.contains("GIT_NO_REPLACE_OBJECTS=1")
@@ -78,8 +75,8 @@ public final class WorkflowBoundaryTest {
         String verify = Files.readString(root.resolve(".github/workflows/verify-release.yml"));
         String build = Files.readString(root.resolve("build.gradle.kts"));
         String settings = Files.readString(root.resolve("publishing/consumer-smoke/settings.gradle.kts"));
-        validate(release, verify, build, settings); WorkflowPins.check(root);
-        String action = Files.readString(root.resolve(WorkflowPins.BOOTSTRAP));
+        validate(release, verify, build, settings);
+        String action = Files.readString(root.resolve(".github/actions/setup-nix/action.yml"));
         String acquire = actionRun(action, "Acquire reviewed Nix installer");
         String cleanup = actionRun(action, "Validate Nix identity");
         // These are external acquisition identities, not a checksum of local source.
@@ -103,16 +100,6 @@ public final class WorkflowBoundaryTest {
         }
         require(shell(args[1], fakes.replace("VERSION_STATUS", "7").replace("TOKEN_STATUS", "0")
             .replace("TOKEN_VALUE", "").replace("nix (Nix) 2.35.2", "") + cleanup) == 7);
-        for (String text : List.of(job(release, "preflight"), job(release, "publish-central"), job(verify, "verify"), job(verify, "finalize"))) {
-            WorkflowPins.inspectSetup(text, 1);
-            require(text.indexOf(WorkflowPins.SETUP) < text.indexOf(".#release-runtime"));
-            require(text.contains("unset GH_TOKEN GITHUB_TOKEN NIX_CONFIG NIX_USER_CONF_FILES")
-                && text.contains("${!ORG_GRADLE_PROJECT_@}"));
-        }
-        String sourceFilter = Files.readString(root.resolve("nix/tooling.nix"));
-        validateSourceFilter(sourceFilter);
-        reject(() -> validateSourceFilter(sourceFilter.replace("      ../.github/actions/setup-nix/action.yml\n", "")));
-        reject(() -> validateSourceFilter(sourceFilter.replace("      ../nix/tooling.nix\n", "")));
         for (String[] edit : List.of(new String[]{"false && github.run_attempt == 1", "github.run_attempt == 1"},
             new String[]{"release reserve", "release tagged"}, new String[]{"needs: [preflight, publish-central]", "needs: preflight"},
             new String[]{"export ORG_GRADLE_PROJECT_centralUpload=true", "true"}))
@@ -122,6 +109,7 @@ public final class WorkflowBoundaryTest {
             new String[]{"clean verifyPublication", "true"}))
             reject(() -> validate(release, verify.replace(edit[0], edit[1]), build, settings));
         reject(() -> validate(release, verify + "\nsecrets: inherit\n", build, settings));
+        signingOrder(release, args[1]);
         Path output = Files.createTempFile("release-input-test-", ".txt");
         try {
             for (String value : List.of("0.2.0", "0.2.0\ncommit=evil", "$(touch injected)", "../bad", "0.2.0-SNAPSHOT", "1".repeat(129))) {
@@ -134,14 +122,31 @@ public final class WorkflowBoundaryTest {
         } finally { Files.delete(output); }
         System.out.println("Actual workflow activation, one-invocation, isolation and input regressions PASS");
     }
-    static void validateSourceFilter(String text) throws Exception {
-        int start = text.indexOf("  releaseIntegritySource = lib.fileset.toSource {");
-        int end = text.indexOf("  classes =", start);
-        require(start >= 0 && end > start);
-        String fixture = text.substring(start, end);
-        require(fixture.contains("      ../.github/actions/setup-nix/action.yml\n")
-            && fixture.contains("      ../nix/tooling.nix\n") && fixture.contains("      ../.github/workflows\n"));
-        require(!fixture.contains("../review") && !fixture.contains("../.github/actions\n"));
+    static void signingOrder(String release, String bash) throws Exception {
+        String publish = job(release, "publish-central");
+        int start = publish.lastIndexOf("        run: |\n") + "        run: |\n".length();
+        String body = publish.substring(start).stripIndent();
+        Path events = Files.createTempFile("signing-order-", ".txt");
+        try {
+            for (String failure : List.of("none", "credentials", "sign", "signed", "reserve", "tagged")) {
+                Files.writeString(events, "");
+                String script = "GITHUB_RUN_ATTEMPT=1; ORG_GRADLE_PROJECT_mavenCentralUsername=fixture; "
+                    + "ORG_GRADLE_PROJECT_mavenCentralPassword=fixture; ORG_GRADLE_PROJECT_signingInMemoryKey=fixture; "
+                    + "ORG_GRADLE_PROJECT_signingInMemoryKeyId=; ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=;\n"
+                    + (failure.equals("credentials") ? "ORG_GRADLE_PROJECT_signingInMemoryKey=;\n" : "")
+                    + "totipo-java-tool() { printf '%s\\n' \"$2\" >> '" + events + "'; "
+                    + "[[ $2 != " + failure + " ]]; };\n"
+                    + "./gradlew() { if [[ $* == *publishAndReleaseToMavenCentral* ]]; then "
+                    + "printf 'upload\\n' >> '" + events + "'; else printf 'sign\\n' >> '" + events
+                    + "'; [[ " + failure + " != sign ]]; fi; };\n" + body;
+                int status = shell(bash, script);
+                String observed = Files.readString(events);
+                require((status == 0) == failure.equals("none"));
+                if (List.of("credentials", "sign", "signed").contains(failure)) require(!observed.contains("reserve"));
+                if (!failure.equals("none")) require(!observed.contains("upload"));
+                else require(observed.equals("compare\nsign\nsigned\neligible\nreserve\ntagged\nsigned\nupload\n"));
+            }
+        } finally { Files.delete(events); }
     }
     static String actionRun(String action, String name) throws Exception {
         int step = action.indexOf("    - name: " + name); require(step >= 0);

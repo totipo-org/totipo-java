@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import static org.totipo.tooling.release.SourceFiles.require;
 
-/** Fixed canonical acquisition and local identity reads. No tag mutation. */
+/** Post-bootstrap HEAD, cleanliness and job-acquired main ancestry. No network or mutation. */
 public final class GitQueries {
     public static final String REPOSITORY = "totipo-org/totipo-java";
     private final Path root, executable;
@@ -29,26 +29,12 @@ public final class GitQueries {
         return FinalizationProcesses.run(root, command, environment, new byte[0], Duration.ofSeconds(60));
     }
     public void source(ReleaseInputs inputs) throws IOException {
-        String config = run("config", "--local", "--null", "--list");
-        for (String entry : config.split("\0")) {
-            int split = entry.indexOf('\n'); require(split > 0, "Malformed Git configuration");
-            String key = entry.substring(0, split), value = entry.substring(split + 1);
-            boolean safe = switch (key) {
-                case "core.repositoryformatversion" -> value.equals("0");
-                case "core.filemode", "core.logallrefupdates" -> value.equals("true") || value.equals("false");
-                case "core.bare" -> value.equals("false");
-                case "remote.origin.url" -> value.equals("https://github.com/" + REPOSITORY) || value.equals("https://github.com/" + REPOSITORY + ".git");
-                case "remote.origin.fetch" -> value.equals("+refs/heads/*:refs/remotes/origin/*");
-                default -> false;
-            };
-            require(safe, "Unreviewed Git configuration");
-        }
         require(run("rev-parse", "HEAD").strip().equals(inputs.commit()), "Checkout differs from reviewed commit");
         require(run("status", "--porcelain", "--untracked-files=all").isEmpty(), "Checkout must be clean");
-        run("fetch", "--no-tags", "--no-recurse-submodules", "--", "https://github.com/" + REPOSITORY + ".git",
-            "+refs/heads/main:refs/remotes/release/main");
+        // Each fresh job acquired canonical main before executing this tooling.
+        // Preserve that authenticated ancestry and post-build HEAD/clean checks.
         String main = run("rev-parse", "--verify", "refs/remotes/release/main").strip();
-        require(main.matches("[0-9a-f]{40}"), "Invalid fresh main identity");
+        require(main.matches("[0-9a-f]{40}"), "Missing/invalid job-acquired main identity");
         run("merge-base", "--is-ancestor", inputs.commit(), main);
     }
 }

@@ -79,10 +79,9 @@ jobs:
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
           printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
             "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper and actual workflow guardrails
+      - name: Verify wrapper identity
         run: |
           totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-          totipo-java-tool release workflow-pins "$PWD"
       - name: Check initial source and release eligibility
         env:
           GH_TOKEN: ${{ github.token }}
@@ -103,11 +102,8 @@ jobs:
           export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-manifest.json")"
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
           ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
-      - name: Focused snapshot and profile accounting
+      - name: Check source remains clean
         run: |
-          ./gradlew :core:test --tests org.totipo.conformance.SpecSnapshotIntegrityTest --tests org.totipo.conformance.R19ProfileIntegrityTest
-          totipo-java-tool release focused-test-results "$PWD"
-          (cd core/src/test/resources/totipo-spec/v1-pre-rc && sha256sum -c SNAPSHOT.sha256)
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
       - name: Record independently accepted ten-artifact inventory
@@ -165,10 +161,9 @@ jobs:
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
           printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
             "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper and actual workflow guardrails
+      - name: Verify wrapper identity
         run: |
           totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
-          totipo-java-tool release workflow-pins "$PWD"
       - name: Independently rebuild and authenticate publication inputs without secrets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -177,7 +172,7 @@ jobs:
           totipo-java-tool release eligible "$PWD"
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-      - name: Reserve first-time tag then sign, bind inputs and publish once
+      - name: Sign and accept inputs, reserve first-time tag and publish once
         env:
           GH_TOKEN: ${{ github.token }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -193,12 +188,14 @@ jobs:
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyId" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyId; fi
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyPassword" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyPassword; fi
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-          totipo-java-tool release reserve "$PWD"
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
-          totipo-java-tool release tagged "$PWD"
           totipo-java-tool release signed "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
           # Freeze accepted producer/signing tasks; the Gradle publication boundary rechecks all inputs.
           export ORG_GRADLE_PROJECT_centralUpload=true
+          totipo-java-tool release eligible "$PWD"
+          totipo-java-tool release reserve "$PWD"
+          totipo-java-tool release tagged "$PWD"
+          totipo-java-tool release signed "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
           ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true publishAndReleaseToMavenCentral
 
   call-verification:

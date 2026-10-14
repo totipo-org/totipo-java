@@ -130,9 +130,10 @@ existing development shell (`nix develop` or `direnv allow`) or on the host:
 Ordinary `nix flake check` wrapper qualification uses a standalone Java verifier
 compiled directly with pinned JDK 25, without Gradle, Jackson or production
 classes. The checker authenticates the complete properties file and wrapper JAR with
-independently pinned SHA-256 values. They also check exact raw distribution
-URL/checksum declarations, including duplicates and continuations, without
-executing the wrapper or downloading anything. The Java and J1 tooling checks
+reviewed SHA-256 values, without executing the wrapper or downloading anything.
+It authenticates these two files, not arbitrary already-cached Gradle distribution
+bytes. Native distribution checksum verification and Nix-controlled Gradle
+acquisition remain separate. The Java and standalone tooling checks
 remain separate; sibling flake checks have no guaranteed execution order.
 The Java qualification still uses its pinned Gradle executable.
 
@@ -147,10 +148,10 @@ Wrapper maintenance uses the pinned `wrapper` task in `build.gradle.kts`:
 run `./gradlew wrapper` twice to regenerate with the selected distribution, then
 review and qualify its identity. For an intentional Gradle update, review the
 distribution version/checksum and wrapper JAR identity in the build, the wrapper
-verifier and independent test pins and release workflow together. Review both the JAR and complete
+verifier and release workflow together. Review both the JAR and complete
 properties-file identities. Only the exact reviewed properties bytes are accepted:
 comments, whitespace, line endings, declaration order and final-newline changes
-all require a deliberate reviewed properties pin update in the checker and independent tests.
+all require a deliberate reviewed properties pin update in the checker.
 
 For intentional library dependency updates, use the existing maintenance command:
 
@@ -233,9 +234,10 @@ no regeneration when dependencies and build configuration are unchanged.
 The Maven coordinates for published Java implementation version **0.1.5** are
 shown below.
 Maven Central is the binary distribution channel; the manually dispatched
-[Release workflow](.github/workflows/release.yml) validates, signs, publishes and
-reserves an immutable version tag before signing/upload, then independently verifies
-Central and creates the GitHub Release. **J4B leaves live release mutations disabled**;
+[Release workflow](.github/workflows/release.yml) qualifies source, signs and
+accepts inputs, reserves an immutable version tag, then publishes once using
+frozen outputs. It independently verifies Central and creates the GitHub Release.
+**Live release mutations remain disabled**;
 this is the intended automatic experience after separate owner activation. Start
 Release once with the exact reviewed version/SHA; use the independently rerunnable
 [Verify Release workflow](.github/workflows/verify-release.yml) for verification
