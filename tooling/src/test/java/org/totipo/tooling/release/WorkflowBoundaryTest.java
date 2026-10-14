@@ -82,9 +82,20 @@ public final class WorkflowBoundaryTest {
         // These are external acquisition identities, not a checksum of local source.
         require(acquire.contains("https://releases.nixos.org/nix/nix-2.35.2/install"));
         require(acquire.contains("9adda97297d9e8ab360df95c729eabff4f4f93d6db091953c3a68f29e3fb130c"));
-        String downloadFakes = "RUNNER_TEMP=/fixture; curl() { :; }; sha256sum() { return HASH_STATUS; };\n";
-        require(shell(args[1], downloadFakes.replace("HASH_STATUS", "0") + acquire) == 0);
-        require(shell(args[1], downloadFakes.replace("HASH_STATUS", "7") + acquire) == 7);
+        // Model both presence probes explicitly: the Nix build host may already
+        // have Nix on PATH or at the default profile, unlike a fresh Actions runner.
+        String downloadFakes = "RUNNER_TEMP=/fixture;\n"
+            + "command() { [[ $* == '-v nix' ]] || exit 99; return COMMAND_STATUS; };\n"
+            + "test() { [[ $* == '! -e /nix/var/nix/profiles/default/bin/nix' ]] || exit 99; return PROFILE_STATUS; };\n"
+            + "curl() { return DOWNLOAD_STATUS; }; sha256sum() { return HASH_STATUS; };\n";
+        for (String[] example : List.of(new String[]{"1", "0", "0", "0", "0"},
+            new String[]{"1", "0", "0", "7", "7"}, new String[]{"1", "0", "8", "0", "8"},
+            new String[]{"0", "0", "99", "99", "1"}, new String[]{"1", "1", "99", "99", "1"},
+            new String[]{"0", "1", "99", "99", "1"})) {
+            String script = downloadFakes.replace("COMMAND_STATUS", example[0]).replace("PROFILE_STATUS", example[1])
+                .replace("DOWNLOAD_STATUS", example[2]).replace("HASH_STATUS", example[3]) + acquire;
+            require(shell(args[1], script) == Integer.parseInt(example[4]));
+        }
         // Execute only actual shell bodies with built-in function fakes: no Nix,
         // downloader, sudo, daemon or real configuration is ever invoked here.
         require(shell(args[1], "nix() { :; }; curl() { exit 99; };\n" + acquire) == 1);
