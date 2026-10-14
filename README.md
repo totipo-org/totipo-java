@@ -117,46 +117,41 @@ this download cache. Cache regeneration is separate from qualification and never
 runs in CI. Keep `flake.lock` pinned; updating dependencies does not authorize a
 Nix input/toolchain update. Agents must not run Nix.
 
-Direct Gradle commands remain supported for development with JDK 25, in the
-existing development shell (`nix develop` or `direnv allow`) or on the host:
+Supported development, qualification and release require Nix. The locked flake
+supplies JDK 25 and Gradle 9.8.0. Activate the development shell with direnv
+(`direnv allow`) or `nix develop`; both `java` and `gradle` are available:
 
 ```sh
-./gradlew test
-./gradlew :core:test --tests 'fully.qualified.TestClass'
-./gradlew :storage-nio:test --tests 'fully.qualified.TestClass'
-./gradlew javadoc
+gradle test
+gradle build
+gradle :core:test --tests 'fully.qualified.TestClass'
+gradle :storage-nio:test --tests 'fully.qualified.TestClass'
+gradle javadoc
+gradle verifyPublication
 ```
 
-Ordinary `nix flake check` wrapper qualification uses a standalone Java verifier
-compiled directly with pinned JDK 25, without Gradle, Jackson or production
-classes. The checker authenticates the complete properties file and wrapper JAR with
-reviewed SHA-256 values, without executing the wrapper or downloading anything.
-It authenticates these two files, not arbitrary already-cached Gradle distribution
-bytes. Native distribution checksum verification and Nix-controlled Gradle
-acquisition remain separate. The Java and standalone tooling checks
-remain separate; sibling flake checks have no guaranteed execution order.
-The Java qualification still uses its pinned Gradle executable.
-
-Release workflows use that same independent Java wrapper verifier and prebuilt
-Java publication tooling. Direct host publication checks require
-`TOTIPO_PUBLICATION_TOOL` pointing to the standalone launcher; see the
+Publication checks require `TOTIPO_PUBLICATION_TOOL` pointing to the prebuilt
+standalone Java launcher; see the
 [release checklist](RELEASE_CHECKLIST.md#qualification-and-release-reproducibility).
-Repository release tooling has no Python interpreter requirement. Third-party
-runner/bootstrap infrastructure may internally use Python.
+The release-runtime supplies the same pinned JDK and Gradle plus that launcher.
+CI/release use its explicit `TOTIPO_GRADLE` path, including independent consumers.
+There is no separate Gradle distribution acquisition or non-Nix build path.
+Repository release tooling has no Python interpreter requirement.
 
-Wrapper maintenance uses the pinned `wrapper` task in `build.gradle.kts`:
-run `./gradlew wrapper` twice to regenerate with the selected distribution, then
-review and qualify its identity. For an intentional Gradle update, review the
-distribution version/checksum and wrapper JAR identity in the build, the wrapper
-verifier and release workflow together. Review both the JAR and complete
-properties-file identities. Only the exact reviewed properties bytes are accepted:
-comments, whitespace, line endings, declaration order and final-newline changes
-all require a deliberate reviewed properties pin update in the checker.
+Gradle is trusted to compile, test, assemble archives, sign and publish. Product
+tests establish implementation/protocol behavior. The Java publication checker
+accepts the two modules, five artifact roles each, essential POM/module metadata
+and whole-artifact hashes. It treats JARs as opaque bytes; it does not independently
+prove class/source/Javadoc archive membership. Reproducibility proves stable bytes,
+not semantic packaging correctness. A consistently mispackaged archive can escape
+if the retained metadata contract and real consumers pass; this risk is accepted.
+Independent Central reconstruction/hash comparison and both consumer modes check
+the distribution boundary. Detached signature checks establish presence only.
 
 For intentional library dependency updates, use the existing maintenance command:
 
 ```sh
-./gradlew :core:dependencies :storage-nio:dependencies --write-locks --write-verification-metadata sha256
+gradle :core:dependencies :storage-nio:dependencies --write-locks --write-verification-metadata sha256
 ```
 
 Review every lock and checksum change against canonical artifacts before trusting
@@ -167,15 +162,15 @@ These maintenance operations are separate from routine development and qualifica
 
 Record milestone classification before choosing validation. Follow the durable
 [qualification ladder](AGENTS.md#milestone-qualification-ladder): one ordinary
-`./gradlew test` baseline, focused module/API tests during iteration, then once
-stable `./gradlew test build javadoc verifyPublication consumerSmoke`, full test
+`gradle test` baseline, focused module/API tests during iteration, then once
+stable `gradle test build javadoc verifyPublication consumerSmoke`, full test
 accounting, standalone Java guardrails, publication verification and the independent
 POM-only consumer as specified there. Publication, consumer and release-helper
 edits use their relevant focused baselines. Pure docs/Javadocs use Javadoc plus
 contract tests where appropriate; source-Javadoc edits also qualify packaged
 sources/docs with the final normal Java gate. Excluded Markdown-only edits need
 no full Java or Nix rerun. Preserve full test XML/accounting before focused tests
-replace it. `./gradlew build` and `./gradlew dependencies` remain available.
+replace it. `gradle build` and `gradle dependencies` remain available.
 
 Freeze all qualification inputs before the final human Nix gate. Its suite
 already runs offline; a separate host forced-offline full suite needs a specific

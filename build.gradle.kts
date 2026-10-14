@@ -1,7 +1,6 @@
 import java.io.DataInputStream
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.javadoc.Javadoc
-import org.gradle.api.tasks.wrapper.Wrapper
 import org.gradle.external.javadoc.JavadocMemberLevel
 import org.gradle.external.javadoc.StandardJavadocDocletOptions
 import org.gradle.api.publish.maven.tasks.GenerateMavenPom
@@ -163,12 +162,6 @@ tasks.named("assemble") { dependsOn(subprojects.map { "${it.path}:assemble" }) }
 tasks.named("clean") { dependsOn(subprojects.map { "${it.path}:clean" }) }
 tasks.register("test") { dependsOn(subprojects.map { "${it.path}:test" }) }
 
-tasks.named<Wrapper>("wrapper") {
-    gradleVersion = "9.8.0"
-    distributionType = Wrapper.DistributionType.BIN
-    distributionSha256Sum = "bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c"
-}
-
 // Prebuilt standalone verifier; compilation never depends on Gradle or production classes.
 tasks.register<Exec>("verifyPublication") {
     group = "verification"
@@ -187,8 +180,9 @@ tasks.register<Exec>("verifyPublication") {
 tasks.register<Exec>("consumerSmoke") {
     group = "verification"
     dependsOn("verifyPublication")
-    // Nix supplies its pinned Gradle; ordinary development keeps the reviewed wrapper.
-    val executable = providers.gradleProperty("consumerGradleExecutable").getOrElse("./gradlew")
+    // Explicit runtime path in CI/release; the Nix devShell supplies local PATH.
+    val executable = providers.gradleProperty("consumerGradleExecutable")
+        .orElse(providers.environmentVariable("TOTIPO_GRADLE")).getOrElse("gradle")
     commandLine(executable, "-p", "publishing/consumer-smoke", "--offline",
         "--no-daemon", "--no-build-cache", "--rerun-tasks",
         "--dependency-verification=strict", "clean", "check")

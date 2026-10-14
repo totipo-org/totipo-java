@@ -83,30 +83,27 @@ jobs:
           nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
           runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
-          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
-            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper identity
-        run: |
-          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_GRADLE=%s/bin/gradle\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
       - name: Authenticate existing annotated tag and reviewed source
         env:
           GH_TOKEN: ${{ github.token }}
         run: totipo-java-tool release tagged "$PWD"
       - name: Reconstruct ten expected artifacts independently of the publishing run
         run: |
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
+          "$TOTIPO_GRADLE" --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
           totipo-java-tool publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
       - name: Verify Central bytes and all detached signature evidence
         run: totipo-java-tool release remote "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
       - name: Independent Central module-metadata consumer
         run: |
           consumer_home="$(mktemp -d "$RUNNER_TEMP/central-module.XXXXXX")"
-          GRADLE_USER_HOME="$consumer_home" ./gradlew -p publishing/consumer-smoke \
+          GRADLE_USER_HOME="$consumer_home" "$TOTIPO_GRADLE" -p publishing/consumer-smoke \
             --no-daemon --no-build-cache --no-configuration-cache --dependency-verification=strict -PremoteCentral clean check
       - name: Independent Central POM-only consumer
         run: |
           consumer_home="$(mktemp -d "$RUNNER_TEMP/central-pom.XXXXXX")"
-          GRADLE_USER_HOME="$consumer_home" ./gradlew -p publishing/consumer-smoke \
+          GRADLE_USER_HOME="$consumer_home" "$TOTIPO_GRADLE" -p publishing/consumer-smoke \
             --no-daemon --no-build-cache --no-configuration-cache --dependency-verification=strict -PremoteCentral -PpomOnly clean check
           git diff --check
           test -z "$(git status --porcelain --untracked-files=all)"
@@ -155,11 +152,8 @@ jobs:
           nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
           runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
-          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
-            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper identity
-        run: |
-          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_GRADLE=%s/bin/gradle\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
       - name: Create or validate exact GitHub Release from authenticated existing tag
         env:
           GH_TOKEN: ${{ github.token }}

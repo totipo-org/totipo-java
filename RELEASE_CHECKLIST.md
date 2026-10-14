@@ -102,8 +102,16 @@ with pinned JDK 25 and Jackson Core 2.21.7, independently of Gradle/production c
 A human can materialize it with `nix build .#tooling --no-update-lock-file --no-write-lock-file`
 and set `TOTIPO_PUBLICATION_TOOL="$PWD/result/bin/totipo-java-tool"` before direct
 host Gradle publication checks. This is tooling materialization, not a second
-qualification gate. In CI the pinned runtime supplies the launcher and JDK.
-Each new staging repository receives one complete semantic acceptance. Inventory,
+qualification gate. Supported operations require the Nix devShell (direnv or `nix develop`),
+which supplies JDK 25 and Gradle 9.8.0. In CI/release the credential-free
+release-runtime supplies those same packages and the launcher; `TOTIPO_GRADLE`
+names its explicit executable, including nested and remote consumers. There is
+no wrapper or separately downloaded Gradle build path.
+Each new staging repository receives one essential metadata/inventory acceptance.
+JARs are opaque: Gradle owns binary/source/Javadoc assembly. No individual archive
+members are compared with build outputs. Whole-artifact hashes bind identity,
+not packaging correctness; consistently mispackaged archives satisfying metadata
+and consumer checks are an explicitly accepted residual risk. Inventory,
 comparison, signing and remote checks then rehash accepted bytes at use boundaries.
 Never treat an arbitrary manifest as proof of semantic acceptance.
 
@@ -111,16 +119,16 @@ For explicit release-source preparation, retain the normal/offline comparison;
 preserve full XML/accounting before any clean or focused run replaces it:
 
 ```sh
-./gradlew --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
+gradle --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
 "$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
 # Copy manifest and full XML to an external evidence directory before the next run.
 cp build/publication-manifest.json /tmp/totipo-normal-publication-manifest.json
-./gradlew --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
+gradle --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
 "$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
 EXPECTED_INVENTORY="$(cat /tmp/totipo-normal-publication-manifest.json)" \
   REQUESTED_VERSION="$(cat VERSION)" REQUESTED_COMMIT="$(git rev-parse HEAD)" \
   "$TOTIPO_PUBLICATION_TOOL" release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
+gradle -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
 
 Require all ten hashes to match: binary/source/Javadoc JARs, POMs and module

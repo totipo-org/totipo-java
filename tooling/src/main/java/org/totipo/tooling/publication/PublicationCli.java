@@ -32,7 +32,7 @@ public final class PublicationCli {
             delete(manifestPath); delete(metadata);
             try {
                 String version = version(root);
-                var manifest = PublicationVerifier.verify(root, repo, version);
+                var manifest = PublicationVerifier.verify(repo, version);
                 byte[] consumer = PublicationVerifier.consumerMetadata(manifest,
                         read(root.resolve("publishing/consumer-smoke/verification-metadata-template.xml"), 65_536));
                 writeEvidence(manifest, consumer, manifestPath, metadata,

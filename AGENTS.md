@@ -1,5 +1,11 @@
 # Java qualification
 
+Supported development, qualification and release require Nix. The locked flake
+supplies JDK 25 and Gradle 9.8.0; activate the devShell through direnv or
+`nix develop`. There is no separate wrapper or host-toolchain build path.
+CI/release use `TOTIPO_GRADLE`, the explicit release-runtime executable; nested
+consumers inherit it. Local commands below run in the activated devShell.
+
 Agents must not run Nix. The human routine Java Nix gate is exactly:
 
 ```sh
@@ -39,7 +45,7 @@ use Git-aware forms such as `nix build .#<target>`, `nix run .#<app> -- ...` and
 non-Git or deliberately raw filesystem semantics are intentional. Ignored/untracked
 local build, cache and secret state must remain outside Git source membership;
 never intent-add caches, generated build outputs, temporary evidence or secrets.
-The existing qualification source filter remains unchanged. Freeze included
+Preserve the qualification source filter for required production inputs. Freeze included
 inputs before the human gate; later included-input edits invalidate its result.
 Only confirmed excluded reports may be finalized afterward.
 
@@ -71,21 +77,21 @@ before selecting validation. Record every applicable classification:
 For an ordinary Java/API change, take one small baseline:
 
 ```sh
-./gradlew test
+gradle test
 ```
 
 Do not add `clean`, `--rerun-tasks`, `--offline`, publication or consumers by
 default. For publication/release-tooling work, add only the relevant focused
-baseline. For pure docs/Javadocs use `./gradlew javadoc` instead, plus focused
+baseline. For pure docs/Javadocs use `gradle javadoc` instead, plus focused
 tests only where the documentation describes a subtle executable contract.
 
 Iterate with the affected module/API or helper, for example:
 
 ```sh
-./gradlew :core:test --tests 'fully.qualified.TestClass'
-./gradlew :storage-nio:test --tests 'fully.qualified.TestClass'
-./gradlew verifyPublication
-./gradlew consumerSmoke
+gradle :core:test --tests 'fully.qualified.TestClass'
+gradle :storage-nio:test --tests 'fully.qualified.TestClass'
+gradle verifyPublication
+gradle consumerSmoke
 java -cp "$TOTIPO_TOOLING_TEST_CLASSPATH" org.totipo.tooling.release.ReleaseTest "$PWD"
 ```
 
@@ -108,20 +114,25 @@ For runtime/API/publication-affecting changes, including consumer, dependency or
 build changes affecting that boundary, run once when stable:
 
 ```sh
-./gradlew test build javadoc verifyPublication consumerSmoke
+gradle test build javadoc verifyPublication consumerSmoke
 "$TOTIPO_PUBLICATION_TOOL" release test-results "$PWD"
 "$TOTIPO_PUBLICATION_TOOL" publication check "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
+gradle -p publishing/consumer-smoke --offline -PpomOnly clean check
 ```
 
 `TOTIPO_PUBLICATION_TOOL` must name the prebuilt standalone Java launcher (see
 RELEASE_CHECKLIST.md); Gradle must never compile the independent tooling.
 Tooling changes also require direct JDK 25 compilation and all permanent runners
-listed in `nix/tooling.nix`, with only pinned Jackson Core on the classpath, plus
-JDK-only wrapper tests. `TOTIPO_TOOLING_TEST_CLASSPATH` names those independently
+listed in `nix/tooling.nix`, with only pinned Jackson Core on the classpath. `TOTIPO_TOOLING_TEST_CLASSPATH` names those independently
 compiled test/main classes and Jackson. Nix runs these guardrails as a separate
 check/dependency. GitHub's configured native policy requires immutable full-commit
 SHA references for external actions; do not maintain a duplicate local registry.
+
+Gradle owns standard archive assembly. Publication acceptance checks essential
+Maven metadata, expected inventory and ten whole-artifact SHA-256 hashes; it
+does not compare JAR members with classes, sources or generated Javadocs.
+Consistent mispackaging satisfying metadata and consumer checks is an accepted
+residual risk. Hash identity alone does not prove packaging correctness.
 
 The manifest check rereads staged bytes and proves the repository is unchanged
 since `verifyPublication` accepted it; it does not repeat semantic verification. Each newly produced staging
@@ -176,7 +187,7 @@ Inspect both `qualification.nix`'s source filter and `flake.nix` inputs rather
 than assuming every Markdown path is included. Currently source Javadocs under
 `core/src` and `storage-nio/src` are included; `AGENTS.md`, `README.md`,
 `RELEASE_CHECKLIST.md`, `API_DESIGN.md` and `review/` are excluded. Nix definitions,
-lockfile, cache and wrapper-check inputs also determine qualification.
+lockfile, cache inputs also determine qualification.
 Any later edit to an included input invalidates the final Nix result.
 
 Normal/offline ten-artifact hash comparison remains separately mandatory for

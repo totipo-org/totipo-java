@@ -53,7 +53,7 @@ public final class WorkflowBoundaryTest {
         require(read.contains("$RUNNER_TEMP/central-module.XXXXXX") && read.contains("$RUNNER_TEMP/central-pom.XXXXXX")
             && count(read, "GRADLE_USER_HOME=\"$consumer_home\"") == 2 && count(read, "--dependency-verification=strict -PremoteCentral") == 2);
         require(finish.contains("    needs: verify\n") && finish.contains("      contents: write\n") && finish.contains("release finalize"));
-        require(!finish.contains("./gradlew") && !finish.contains("release reserve"));
+        require(!finish.contains("\"$TOTIPO_GRADLE\"") && !finish.contains("release reserve"));
         require(preflight.contains("test \"$DISPATCH_SHA\" = \"$REQUESTED_COMMIT\""));
         for (String text : List.of(release, verify)) {
             require(text.contains("persist-credentials: false") && text.contains("GIT_NO_REPLACE_OBJECTS=1")
@@ -141,13 +141,13 @@ public final class WorkflowBoundaryTest {
         try {
             for (String failure : List.of("none", "credentials", "sign", "signed", "reserve", "tagged")) {
                 Files.writeString(events, "");
-                String script = "GITHUB_RUN_ATTEMPT=1; ORG_GRADLE_PROJECT_mavenCentralUsername=fixture; "
+                String script = "TOTIPO_GRADLE=fixture-gradle; GITHUB_RUN_ATTEMPT=1; ORG_GRADLE_PROJECT_mavenCentralUsername=fixture; "
                     + "ORG_GRADLE_PROJECT_mavenCentralPassword=fixture; ORG_GRADLE_PROJECT_signingInMemoryKey=fixture; "
                     + "ORG_GRADLE_PROJECT_signingInMemoryKeyId=; ORG_GRADLE_PROJECT_signingInMemoryKeyPassword=;\n"
                     + (failure.equals("credentials") ? "ORG_GRADLE_PROJECT_signingInMemoryKey=;\n" : "")
                     + "totipo-java-tool() { printf '%s\\n' \"$2\" >> '" + events + "'; "
                     + "[[ $2 != " + failure + " ]]; };\n"
-                    + "./gradlew() { if [[ $* == *publishAndReleaseToMavenCentral* ]]; then "
+                    + "fixture-gradle() { if [[ $* == *publishAndReleaseToMavenCentral* ]]; then "
                     + "printf 'upload\\n' >> '" + events + "'; else printf 'sign\\n' >> '" + events
                     + "'; [[ " + failure + " != sign ]]; fi; };\n" + body;
                 int status = shell(bash, script);

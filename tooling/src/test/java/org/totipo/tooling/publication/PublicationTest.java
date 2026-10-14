@@ -10,14 +10,11 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 
 /** Independent synthetic boundary fixtures; no Python, Gradle, production classes or JUnit. */
 public final class PublicationTest {
     private static final String VERSION = "0.2.0";
     private static final String URL = "https://github.com/totipo-org/totipo-java";
-    private static final byte[] MANIFEST = bytes("Manifest-Version: 1.0\r\n\r\n");
     private static int assertions;
     private PublicationTest() {}
     @FunctionalInterface interface Action { void run() throws Exception; }
@@ -34,23 +31,9 @@ public final class PublicationTest {
         if (!failed) throw new AssertionError("Negative accepted"); assertions++;
     }
     private static void check(boolean value) { if (!value) throw new AssertionError("Assertion failed"); assertions++; }
-    private static void zip(Path path, Map<String, byte[]> entries) throws IOException {
-        Files.createDirectories(path.getParent());
-        try (var out = new ZipOutputStream(Files.newOutputStream(path))) {
-            for (var e : entries.entrySet()) {
-                var entry = new ZipEntry(e.getKey());
-                // Recreated fixtures must retain identical hashes across wall-clock boundaries.
-                entry.setTimeLocal(java.time.LocalDateTime.of(2000, 1, 1, 0, 0));
-                out.putNextEntry(entry); out.write(e.getValue()); out.closeEntry();
-            }
-        }
-    }
-    private static Map<String, byte[]> archiveEntries(String name, byte[] data) {
-        Map<String, byte[]> m = new LinkedHashMap<>(); m.put("META-INF/MANIFEST.MF", MANIFEST); m.put(name, data); return m;
-    }
     public static void acceptedFixture(Path root) throws Exception {
         fixture(root);
-        var accepted = PublicationVerifier.verify(root, root.resolve("build/repository"), "0.2.0");
+        var accepted = PublicationVerifier.verify(root.resolve("build/repository"), "0.2.0");
         Files.write(root.resolve("build/publication-manifest.json"), accepted.bytes());
     }
     static Path fixture(Path root) throws Exception {
@@ -59,13 +42,9 @@ public final class PublicationTest {
         for (String module : List.of("core", "storage-nio")) {
             String artifact = "totipo-" + module, prefix = artifact + "-" + VERSION;
             Path dir = repo(root).resolve("org/totipo/" + artifact + "/" + VERSION);
-            byte[] clazz = {(byte) 0xca, (byte) 0xfe, (byte) 0xba, (byte) 0xbe, 0, 0, 0, 61, 1, 2};
-            write(root.resolve(module + "/build/classes/java/main/org/example/A.class"), clazz);
-            write(root.resolve(module + "/src/main/java/org/example/A.java"), "package org.example; class A {}\n");
-            write(root.resolve(module + "/build/docs/javadoc/index.html"), "<html>fixture docs</html>\n");
-            zip(dir.resolve(prefix + ".jar"), archiveEntries("org/example/A.class", clazz));
-            zip(dir.resolve(prefix + "-sources.jar"), archiveEntries("org/example/A.java", bytes("package org.example; class A {}\n")));
-            zip(dir.resolve(prefix + "-javadoc.jar"), archiveEntries("index.html", bytes("<html>fixture docs</html>\n")));
+            // Opaque bytes deliberately need no ZIP structure or producer output trees.
+            for (String suffix : List.of(".jar", "-sources.jar", "-javadoc.jar"))
+                write(dir.resolve(prefix + suffix), module + suffix + " opaque artifact bytes");
             String group = module.equals("core") ? "org.bouncycastle" : "org.totipo";
             String dependency = module.equals("core") ? "bcprov-jdk18on" : "totipo-core";
             String depVersion = module.equals("core") ? "1.86" : VERSION;
@@ -82,7 +61,10 @@ public final class PublicationTest {
                 byte[] data = Files.readAllBytes(dir.resolve(prefix + suffix));
                 String deps = variant.equals("runtimeElements") || (module.equals("storage-nio") && variant.equals("apiElements"))
                         ? ",\"dependencies\":[{\"group\":\"" + group + "\",\"module\":\"" + dependency + "\",\"version\":{\"requires\":\"" + depVersion + "\"}}]" : "";
-                variants.add("{\"name\":\"" + variant + "\",\"attributes\":{\"org.gradle.jvm.version\":17}" + deps
+                String attributes = variant.equals("sourcesElements") || variant.equals("javadocElements")
+                        ? "\"org.gradle.category\":\"documentation\",\"org.gradle.usage\":\"java-runtime\",\"org.gradle.docstype\":\"" + (variant.equals("sourcesElements") ? "sources" : "javadoc") + "\""
+                        : "\"org.gradle.category\":\"library\",\"org.gradle.usage\":\"" + (variant.equals("apiElements") ? "java-api" : "java-runtime") + "\",\"org.gradle.jvm.version\":17";
+                variants.add("{\"name\":\"" + variant + "\",\"attributes\":{" + attributes + "}" + deps
                         + ",\"files\":[{\"name\":\"" + prefix + suffix + "\",\"url\":\"" + prefix + suffix + "\",\"size\":" + data.length + ",\"sha256\":\"" + hash(data) + "\"}]}");
             }
             write(dir.resolve(prefix + ".module"), "{\"formatVersion\":\"1.1\",\"component\":{\"group\":\"org.totipo\",\"module\":\"" + artifact + "\",\"version\":\"0.2.0\",\"attributes\":{\"org.gradle.status\":\"release\"}},\"variants\":[" + String.join(",", variants) + "]}");
@@ -98,7 +80,7 @@ public final class PublicationTest {
     private static void semantic(String name, boolean javaAccept, Mutation mutation) throws Exception {
         Path root = Files.createTempDirectory("publication-fixture-" + name + "-");
         fixture(root); mutation.run(root);
-        Action verify = () -> PublicationVerifier.verify(root, repo(root), VERSION);
+        Action verify = () -> PublicationVerifier.verify(repo(root), VERSION);
         if (javaAccept) { verify.run(); assertions++; } else reject(verify);
         remove(root);
     }
@@ -107,27 +89,6 @@ public final class PublicationTest {
     }
     private static void moduleCase(String name, String from, String to) throws Exception {
         semantic(name, false, r -> replace(artifact(r, ".module"), from, to));
-    }
-    private static void jarCase(String name, String suffix, Mutation mutation) throws Exception {
-        semantic(name, false, r -> {
-            mutation.run(r);
-            // Refresh independent module assertions so archive checks, rather than stale hashes, reject.
-            Path p = artifact(r, suffix); byte[] data = Files.readAllBytes(p);
-            var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
-            for (Object item : Json.array(m.get("variants"))) {
-                var v = Json.object(item); var f = Json.object(Json.array(v.get("files")).getFirst());
-                if (f.get("name").equals(p.getFileName().toString())) {
-                    f.put("size", data.length); f.put("sha256", hash(data));
-                    @SuppressWarnings("unchecked") Map<String, Object> original = (Map<String, Object>) item;
-                    original.put("files", List.of(f));
-                }
-            }
-            write(artifact(r, ".module"), Json.dumps(m, false));
-        });
-    }
-    private static void mutateZip(Path path, String name, byte[] data, boolean remove) throws IOException {
-        Map<String, byte[]> contents = PublicationVerifier.archive(path);
-        if (remove) contents.remove(name); else contents.put(name, data); zip(path, contents);
     }
     private static void remove(Path root) throws IOException {
         try (var paths = Files.walk(root)) { for (Path p : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(p); }
@@ -148,10 +109,14 @@ public final class PublicationTest {
         pomCase("pom-dependency", "bcprov-jdk18on", "other");
         pomCase("pom-scope", "<scope>runtime", "<scope>compile");
         pomCase("pom-extra-dependency", "</dependencies>", "<dependency/></dependencies>");
-        pomCase("pom-optional", "</dependency>", "<optional>false</optional></dependency>");
+        pomCase("pom-optional", "</dependency>", "<optional>true</optional></dependency>");
+        semantic("pom-explicit-defaults", true, r -> replace(artifact(r, ".pom"), "</dependency>", "<optional>false</optional><type>jar</type></dependency>"));
+        pomCase("pom-dependency-type", "</dependency>", "<type>pom</type></dependency>");
+        pomCase("pom-exclusion", "</dependency>", "<exclusions><exclusion/></exclusions></dependency>");
         pomCase("pom-classifier", "</dependency>", "<classifier>other</classifier></dependency>");
-        pomCase("pom-license", "Apache License 2.0", "Other license");
-        pomCase("pom-scm", "scm:git:ssh:", "wrong:");
+        semantic("pom-descriptive-metadata", true, r -> replace(artifact(r, ".pom"), "Apache License 2.0", "Other license"));
+        pomCase("pom-missing-scm", "<connection>scm:git:" + URL + ".git</connection>", "");
+        pomCase("pom-duplicate-coordinate", "<groupId>org.totipo</groupId>", "<groupId>org.totipo</groupId><groupId>wrong</groupId>");
         pomCase("pom-malformed", "</project>", "");
         semantic("pom-external-entity", false, r -> {
             replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY evil SYSTEM 'file:///nonexistent-totipo-j2b'>]><project");
@@ -165,51 +130,24 @@ public final class PublicationTest {
         semantic("pom-internal-dtd-tightening", false, r -> replace(artifact(r, ".pom"), "<project", "<!DOCTYPE project [<!ENTITY benign 'safe'>]><project"));
         moduleCase("module-component", "\"group\":\"org.totipo\"", "\"group\":\"wrong\"");
         moduleCase("module-format", "\"1.1\"", "\"1.2\"");
-        moduleCase("module-missing-variant", "javadocElements", "other");
+        semantic("module-variant-names", true, r -> replace(artifact(r, ".module"), "javadocElements", "other"));
+        moduleCase("module-docstype", "\"org.gradle.docstype\":\"javadoc\"", "\"org.gradle.docstype\":\"other\"");
         moduleCase("module-dependency", "bcprov-jdk18on", "other");
         moduleCase("module-size", "\"size\":", "\"size\":9");
         moduleCase("module-java-bool", "\"org.gradle.jvm.version\":17", "\"org.gradle.jvm.version\":true");
         moduleCase("module-java", "\"org.gradle.jvm.version\":17", "\"org.gradle.jvm.version\":25");
         moduleCase("module-float-size", "\"size\":", "\"size\":0.1e");
         moduleCase("module-hash", "\"sha256\":\"", "\"sha256\":\"0");
-        moduleCase("module-capability", "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"capabilities\":[{}],\"attributes\":{\"org.gradle.jvm.version\":17}");
-        moduleCase("module-constraint", "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"dependencyConstraints\":[{}],\"attributes\":{\"org.gradle.jvm.version\":17}");
-        moduleCase("module-available-at", "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"available-at\":{\"url\":\"other\"},\"attributes\":{\"org.gradle.jvm.version\":17}");
-        moduleCase("module-project-path", "\"formatVersion\":", "\"leak\":\":core\",\"formatVersion\":");
+        moduleCase("module-capability", "\"name\":\"apiElements\"", "\"capabilities\":[{}],\"name\":\"apiElements\"");
+        moduleCase("module-constraint", "\"name\":\"apiElements\"", "\"dependencyConstraints\":[{}],\"name\":\"apiElements\"");
+        moduleCase("module-available-at", "\"name\":\"apiElements\"", "\"available-at\":{\"url\":\"other\"},\"name\":\"apiElements\"");
+        semantic("module-unrelated-extension", true, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"extension\":\":core\",\"formatVersion\":"));
         semantic("module-duplicate-tightening", false, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"formatVersion\":\"bad\",\"formatVersion\":"));
         semantic("module-utf16", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).getBytes(StandardCharsets.UTF_16)));
         semantic("module-bom", false, r -> write(artifact(r, ".module"), "\ufeff" + Files.readString(artifact(r, ".module"))));
         semantic("module-invalid-utf8", false, r -> write(artifact(r, ".module"), new byte[] {(byte) 0xff}));
         semantic("module-truncated", false, r -> write(artifact(r, ".module"), "{"));
         semantic("module-oversized-tightening", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")) + " ".repeat(65_536)));
-        jarCase("missing-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/A.class", null, true));
-        jarCase("extra-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/B.class", new byte[8], false));
-        jarCase("changed-class", ".jar", r -> mutateZip(artifact(r, ".jar"), "org/example/A.class", new byte[8], false));
-        jarCase("wrong-class-version", ".jar", r -> {
-            byte[] b = Files.readAllBytes(r.resolve("core/build/classes/java/main/org/example/A.class")); b[7] = 65;
-            write(r.resolve("core/build/classes/java/main/org/example/A.class"), b); mutateZip(artifact(r, ".jar"), "org/example/A.class", b, false);
-        });
-        jarCase("changed-source", "-sources.jar", r -> mutateZip(artifact(r, "-sources.jar"), "org/example/A.java", bytes("wrong"), false));
-        jarCase("missing-source", "-sources.jar", r -> mutateZip(artifact(r, "-sources.jar"), "org/example/A.java", null, true));
-        jarCase("extra-javadoc", "-javadoc.jar", r -> mutateZip(artifact(r, "-javadoc.jar"), "extra.html", bytes("extra"), false));
-        jarCase("changed-javadoc", "-javadoc.jar", r -> mutateZip(artifact(r, "-javadoc.jar"), "index.html", bytes("wrong"), false));
-        jarCase("corrupt-archive", ".jar", r -> write(artifact(r, ".jar"), "not a zip"));
-        jarCase("truncated-archive", ".jar", r -> { byte[] b = Files.readAllBytes(artifact(r, ".jar")); write(artifact(r, ".jar"), java.util.Arrays.copyOf(b, b.length - 15)); });
-        jarCase("invalid-archive-name", ".jar", r -> mutateZip(artifact(r, ".jar"), "../escape", bytes("escape"), false));
-        jarCase("excessive-archive", ".jar", r -> mutateZip(artifact(r, ".jar"), "bomb", new byte[16 * 1024 * 1024 + 1], false));
-        jarCase("local-zip-name-mismatch", ".jar", r -> {
-            byte[] b = Files.readAllBytes(artifact(r, ".jar")); byte[] from = bytes("org/example/A.class");
-            for (int i = 0; i <= b.length - from.length; i++) if (java.util.Arrays.equals(java.util.Arrays.copyOfRange(b, i, i + from.length), from)) {
-                b[i + 12] = 'B'; break;
-            }
-            write(artifact(r, ".jar"), b);
-        });
-        jarCase("duplicate-zip-entry", ".jar", r -> {
-            mutateZip(artifact(r, ".jar"), "org/example/B.class", new byte[10], false);
-            byte[] b = Files.readAllBytes(artifact(r, ".jar")); byte[] from = bytes("org/example/B.class"), to = bytes("org/example/A.class");
-            for (int i = 0; i <= b.length - from.length; i++) if (java.util.Arrays.equals(java.util.Arrays.copyOfRange(b, i, i + from.length), from)) System.arraycopy(to, 0, b, i, to.length);
-            write(artifact(r, ".jar"), b);
-        });
         semantic("valid-sidecars", true, r -> {
             byte[] binary = Files.readAllBytes(artifact(r, ".jar"));
             write(artifact(r, ".jar.sha256"), "\u00a0" + hash(binary) + "\u0085\n");
@@ -217,7 +155,7 @@ public final class PublicationTest {
         semantic("module-integral-java-float-tightening", false, r -> replace(artifact(r, ".module"), "\"org.gradle.jvm.version\":17", "\"org.gradle.jvm.version\":17.0"));
         semantic("module-integral-size-float-tightening", false, r -> write(artifact(r, ".module"), Files.readString(artifact(r, ".module")).replaceAll("(\"size\":\\d+)", "$1.0")));
         semantic("module-nan-tightening", false, r -> replace(artifact(r, ".module"), "\"formatVersion\":", "\"unused\":NaN,\"formatVersion\":"));
-        semantic("module-capability-type-tightening", false, r -> replace(artifact(r, ".module"), "\"attributes\":{\"org.gradle.jvm.version\":17}", "\"capabilities\":false,\"attributes\":{\"org.gradle.jvm.version\":17}"));
+        semantic("module-capability-type-tightening", false, r -> replace(artifact(r, ".module"), "\"name\":\"apiElements\"", "\"capabilities\":false,\"name\":\"apiElements\""));
         semantic("module-extra-variant-tightening", false, r -> {
             var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
             List<Object> variants = new ArrayList<>(Json.array(m.get("variants"))); variants.add(variants.getFirst());
@@ -231,18 +169,6 @@ public final class PublicationTest {
             }
             write(artifact(r, ".module"), Json.dumps(m, false));
         });
-        semantic("archive-manifest-tightening", false, r -> {
-            mutateZip(artifact(r, ".jar"), "META-INF/MANIFEST.MF", bytes("Manifest-Version: 9.0\r\n\r\n"), false);
-            var m = Json.object(Json.parse(Files.readAllBytes(artifact(r, ".module")), org.totipo.tooling.StrictJson.MODULE));
-            for (Object variant : Json.array(m.get("variants"))) {
-                @SuppressWarnings("unchecked") Map<String, Object> v = (Map<String, Object>) variant;
-                var file = Json.object(Json.array(v.get("files")).getFirst());
-                if (file.get("name").equals(artifact(r, ".jar").getFileName().toString())) {
-                    byte[] b = Files.readAllBytes(artifact(r, ".jar")); file.put("size", b.length); file.put("sha256", hash(b)); v.put("files", List.of(file));
-                }
-            }
-            write(artifact(r, ".module"), Json.dumps(m, false));
-        });
         manifestTests(); jsonCompatibility(); profileTests();
         System.out.println("Publication tests passed: " + assertions + " assertions");
     }
@@ -250,7 +176,7 @@ public final class PublicationTest {
         Path root = fixture(Files.createTempDirectory("publication-manifest-test-"));
         Path output = Files.createTempDirectory("publication-output-test-");
         try {
-            var accepted = PublicationVerifier.verify(root, repo(root), VERSION);
+            var accepted = PublicationVerifier.verify(repo(root), VERSION);
             String text = new String(accepted.bytes(), StandardCharsets.UTF_8);
             var parsed = PublicationManifest.parse(bytes(text), VERSION);
             check(parsed.equals(accepted));
@@ -316,7 +242,7 @@ public final class PublicationTest {
             reject(() -> PublicationCli.run(new String[]{"verify", root.toString(), repo(root).toString(),
                 root.resolve("unapproved.json").toString(), integratedMetadata.toString()}));
             Files.createSymbolicLink(artifact(root, ".pom.sha256"), output.resolve("outside"));
-            reject(() -> PublicationVerifier.verify(root, repo(root), VERSION));
+            reject(() -> PublicationVerifier.verify(repo(root), VERSION));
             Files.delete(artifact(root, ".pom.sha256"));
             byte[] consumer = PublicationVerifier.consumerMetadata(accepted, bytes("   </components>\n"));
             String c = new String(consumer, StandardCharsets.UTF_8);

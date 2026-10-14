@@ -25,10 +25,7 @@ jobs:
           nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
           runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
-          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
-            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper identity
-        run: |
-          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_GRADLE=%s/bin/gradle\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
       - name: Qualify Java libraries and publication artifacts
         run: nix flake check --no-update-lock-file --no-write-lock-file --print-build-logs

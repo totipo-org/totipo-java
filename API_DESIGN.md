@@ -25,6 +25,14 @@ Release creation/validation. J4B keeps mutation jobs disabled pending separate
 owner activation. See RELEASE_CHECKLIST.md. This release policy is separate from
 application object-publication and retry contracts below.
 
+Supported builds require the locked Nix JDK 25 / Gradle 9.8.0 environment.
+Gradle owns standard compilation and archive assembly; production targets Java 17.
+Publication validation checks the ten whole artifacts, essential coordinates and
+dependency semantics. It does not compare JAR members with classes, sources or
+generated Javadocs. Reproducible hashes bind complete bytes, while product tests
+and real module-metadata/POM-only consumers establish behavior and usability.
+Consistent mispackaging that satisfies those checks is an accepted residual risk.
+
 
 0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
 Independent object-candidate validation is retained.

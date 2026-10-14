@@ -77,11 +77,8 @@ jobs:
           nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
           runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
-          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
-            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper identity
-        run: |
-          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_GRADLE=%s/bin/gradle\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
       - name: Check initial source and release eligibility
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,18 +87,18 @@ jobs:
         run: nix flake check --no-update-lock-file --no-write-lock-file --print-build-logs
       - name: Normal and independent forced offline release qualification
         run: |
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
+          "$TOTIPO_GRADLE" --no-daemon --no-build-cache --no-configuration-cache clean test build javadoc verifyPublication consumerSmoke
           totipo-java-tool release test-results "$PWD"
           cp -r core/build/test-results "$RUNNER_TEMP/normal-core-results"
           cp -r storage-nio/build/test-results "$RUNNER_TEMP/normal-storage-results"
           cp build/publication-manifest.json "$RUNNER_TEMP/normal-manifest.json"
-          ./gradlew --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
+          "$TOTIPO_GRADLE" --offline --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks clean test build javadoc verifyPublication consumerSmoke
           totipo-java-tool release test-results "$PWD"
           cp -r core/build/test-results "$RUNNER_TEMP/offline-core-results"
           cp -r storage-nio/build/test-results "$RUNNER_TEMP/offline-storage-results"
           export EXPECTED_INVENTORY="$(cat "$RUNNER_TEMP/normal-manifest.json")"
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-          ./gradlew -p publishing/consumer-smoke --offline -PpomOnly clean check
+          "$TOTIPO_GRADLE" -p publishing/consumer-smoke --offline -PpomOnly clean check
       - name: Check source remains clean
         run: |
           git diff --check
@@ -159,18 +156,15 @@ jobs:
           nix build --no-update-lock-file --no-write-lock-file .#release-runtime --out-link "$RUNNER_TEMP/release-runtime"
           runtime="$(readlink -f "$RUNNER_TEMP/release-runtime")"
           printf '%s/bin\n' "$runtime" >> "$GITHUB_PATH"
-          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
-            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
-      - name: Verify wrapper identity
-        run: |
-          totipo-wrapper-verifier gradle/wrapper/gradle-wrapper.jar gradle/wrapper/gradle-wrapper.properties
+          printf 'JAVA_HOME=%s/lib/openjdk\nTOTIPO_GRADLE=%s/bin/gradle\nTOTIPO_PUBLICATION_TOOL=%s/bin/totipo-java-tool\nRELEASE_GIT=%s/bin/git\nRELEASE_CURL=%s/bin/curl\nSSL_CERT_FILE=%s/etc/ssl/certs/ca-bundle.crt\n' \
+            "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" "$runtime" >> "$GITHUB_ENV"
       - name: Independently rebuild and authenticate publication inputs without secrets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$GITHUB_RUN_ATTEMPT" = 1
           totipo-java-tool release eligible "$PWD"
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
+          "$TOTIPO_GRADLE" --no-daemon --no-build-cache --no-configuration-cache clean verifyPublication
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
       - name: Sign and accept inputs, reserve first-time tag and publish once
         env:
@@ -188,7 +182,7 @@ jobs:
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyId" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyId; fi
           if [[ -z "$ORG_GRADLE_PROJECT_signingInMemoryKeyPassword" ]]; then unset ORG_GRADLE_PROJECT_signingInMemoryKeyPassword; fi
           totipo-java-tool release compare "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
+          "$TOTIPO_GRADLE" --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true :core:signMavenPublication :storage-nio:signMavenPublication
           totipo-java-tool release signed "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
           # Freeze accepted producer/signing tasks; the Gradle publication boundary rechecks all inputs.
           export ORG_GRADLE_PROJECT_centralUpload=true
@@ -196,7 +190,7 @@ jobs:
           totipo-java-tool release reserve "$PWD"
           totipo-java-tool release tagged "$PWD"
           totipo-java-tool release signed "$PWD" "$PWD/build/repository" "$PWD/build/publication-manifest.json"
-          ./gradlew --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true publishAndReleaseToMavenCentral
+          "$TOTIPO_GRADLE" --no-daemon --no-build-cache --no-configuration-cache -PcentralRelease=true publishAndReleaseToMavenCentral
 
   call-verification:
     needs: [preflight, publish-central]

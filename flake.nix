@@ -12,19 +12,21 @@
   };
 
   outputs = { nixpkgs, flake-utils, jailed-agents, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+    # The locked nixpkgs no longer supports Intel macOS.
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = import nixpkgs {
           inherit system;
         };
         tooling = pkgs.callPackage ./nix/tooling.nix { };
-        wrapper = pkgs.callPackage ./nix/wrapper-verifier.nix { };
+        jdk = pkgs.jdk25_headless;
+        gradle = pkgs.gradle_9.override { java = jdk; };
         javaQualification = pkgs.callPackage ./qualification.nix {
           publicationTool = tooling.launcher;
-          jdk = pkgs.jdk25_headless;
-          gradle = pkgs.gradle_9.override { java = pkgs.jdk25_headless; };
+          inherit jdk gradle;
         };
       in
+      assert gradle.version == "9.8.0";
       {
         formatter = pkgs.nixpkgs-fmt;
 
@@ -34,13 +36,12 @@
           tooling = tooling.launcher;
           release-runtime = pkgs.symlinkJoin {
             name = "totipo-release-runtime";
-            paths = [ tooling.launcher wrapper pkgs.jdk25_headless pkgs.gitMinimal pkgs.curl pkgs.cacert ];
+            paths = [ tooling.launcher jdk gradle pkgs.gitMinimal pkgs.curl pkgs.cacert ];
           };
         };
         checks = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           java = javaQualification;
           tooling = tooling.check;
-          inherit wrapper;
         };
         apps = pkgs.lib.optionalAttrs (system == "x86_64-linux") {
           tooling = {
@@ -56,14 +57,16 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            jdk25_headless
-            gradle_9
+          JAVA_HOME = "${jdk}/lib/openjdk";
+          TOTIPO_GRADLE = "${gradle}/bin/gradle";
+          packages = [
+            jdk
+            gradle
             (jailed-agents.lib.${system}.makeJailedCodex {
               fwdEnv = [ "JAVA_HOME" ];
-              extraPkgs = with pkgs; [
-                jdk25_headless
-                gradle_9
+              extraPkgs = [
+                jdk
+                gradle
               ];
             })
           ];
