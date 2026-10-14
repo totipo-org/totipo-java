@@ -38,7 +38,10 @@ public final class PublicationTest {
         Files.createDirectories(path.getParent());
         try (var out = new ZipOutputStream(Files.newOutputStream(path))) {
             for (var e : entries.entrySet()) {
-                out.putNextEntry(new ZipEntry(e.getKey())); out.write(e.getValue()); out.closeEntry();
+                var entry = new ZipEntry(e.getKey());
+                // Recreated fixtures must retain identical hashes across wall-clock boundaries.
+                entry.setTimeLocal(java.time.LocalDateTime.of(2000, 1, 1, 0, 0));
+                out.putNextEntry(entry); out.write(e.getValue()); out.closeEntry();
             }
         }
     }
