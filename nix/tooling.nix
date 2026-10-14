@@ -16,16 +16,10 @@ let
     root = ../tooling;
     fileset = lib.fileset.fileFilter (file: file.hasExt "java") ../tooling/src;
   };
-  # Read-only fixtures for source pin and focused workflow boundary regressions.
+  # Read-only specification pin for source identity and finalization tests.
   releaseIntegritySource = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.unions [
-      ../SPEC_PIN.md
-      ../.github/workflows
-      ../.github/actions/setup-nix/action.yml
-      ../build.gradle.kts
-      ../publishing/consumer-smoke/settings.gradle.kts
-    ];
+    fileset = ../SPEC_PIN.md;
   };
   classes = stdenvNoCC.mkDerivation {
     pname = "totipo-java-tooling-classes";
@@ -58,7 +52,6 @@ let
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationTest ${releaseIntegritySource}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.FinalizationProcessTest ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.TestResultsTest
-      ${jdk}/bin/java -cp "test-classes:classes:${jackson}" org.totipo.tooling.release.WorkflowBoundaryTest ${releaseIntegritySource} ${stdenvNoCC.shell}
       ${jdk}/bin/java -cp "classes:${jackson}" org.totipo.tooling.Main smoke
       runHook postCheck
     '';

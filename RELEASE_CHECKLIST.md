@@ -1,11 +1,11 @@
 # Totipo Java release checklist
 
-**Release tooling is implemented for review, with live mutations disabled.** The procedure
-below is the intended experience after a separately authorized activation change.
-Merging these workflows does not activate tag creation, signing, Central upload
-or GitHub Release creation.
+**J7 enables the existing release jobs after the activation change is reviewed and
+committed.** Release remains manually dispatched with an intended version and exact
+reviewed commit SHA; committing activation does not start a release.
+No new release should be dispatched until the owner confirms Central publishing capacity.
 
-## Successful release after activation
+## Successful release
 
 1. Prepare `VERSION` (exact version plus LF), both Totipo self-coordinates in
    `publishing/consumer-smoke/gradle.lockfile`, and
@@ -16,9 +16,20 @@ or GitHub Release creation.
    and the separate release reproducibility procedure below. Review and commit
    the intended release source through the normal review process.
 3. Confirm ordinary CI succeeds for that commit.
-4. Open GitHub Actions → **Release**, select `main`, enter the version and its
+4. Confirm the effective GitHub protections and environment-scoped credentials below.
+   **Before manually dispatching Release, the owner must confirm that the organization's
+   Maven Central usage and applicable enforcement status permit the intended publication,
+   or that Sonatype has granted an appropriate adjustment or exemption.** Check the
+   [Usage Center](https://central.sonatype.com/publishing/usage) and
+   [official publishing limits](https://central.sonatype.org/publish/maven-central-publishing-limits/).
+   The owner reports current capacity may be exhausted. If blocked, wait for confirmed
+   capacity or contact central-support@sonatype.com; a new calendar month alone does
+   not establish eligibility. A quota rejection happens after immutable tag reservation
+   and can permanently consume the version. Do not probe by publishing, automatically
+   poll quota, retry uploads, or work around limits with another namespace/account.
+5. Open GitHub Actions → **Release**, select `main`, enter the version and its
    exact lowercase 40-character reviewed commit SHA, then start the workflow.
-5. Expect qualification, signing and input acceptance, first-time annotated tag
+6. Expect qualification, signing and input acceptance, first-time annotated tag
    reservation, one
    Gradle Maven Central publication invocation, independent Central verification,
    both Central consumers, and automatic GitHub Release creation. Intervene only
@@ -57,7 +68,7 @@ checks Central bytes and all ten detached-signature files, executes both remote
 consumers with distinct fresh external Gradle homes, and creates or validates the
 GitHub Release. It needs no earlier Actions artifact, Maven credentials, signing
 secret or `release` environment. It cannot upload to Central or create a missing tag.
-While mutation guards remain disabled, read-only verification can run but GitHub finalization is skipped.
+GitHub finalization runs automatically only after Central verification and both consumers succeed.
 
 | Failure | Maintainer response |
 | --- | --- |
@@ -140,12 +151,12 @@ validated by the full library tests, Java 17 output,
 locks/strict verification, independent publication validation and both local consumers.
 The release preflight repeats these gates on the exact committed source.
 
-## Owner-operated settings and separate activation
+## Owner-operated settings and activation handoff
 
 The owner reports protections configured, including GitHub's native full-commit
 SHA policy for external actions. Source regression tests do not independently
 prove effective privileged settings or hosted secrets. Confirm these effective
-settings before separate activation; no additional successful-path manual action
+settings before any real release dispatch; no additional approval step
 is introduced.
 
 - Protect `main`: require reviewed pull requests and successful ordinary CI,
@@ -156,7 +167,7 @@ is introduced.
   bypass. Do not use a creation restriction that prevents the chosen Actions
   token from creating a new release tag. Confirm effective rules permit first-time
   creation but forbid subsequent updates/deletion for that same actor. If settings
-  cannot express this distinction for the selected token, stop before activation.
+  cannot express this distinction for the selected token, stop before release dispatch.
 - Configure the `release` environment to allow deployments only from protected
   `main`. Respect any effective organization/environment protection; do not add
   an otherwise unnecessary approval requirement.
@@ -167,14 +178,14 @@ is introduced.
 - Keep default Actions permissions read-only. Allow explicit `contents:write`
   only for the publishing job, reusable-call ceiling and GitHub finalization job;
   verification itself has `contents:read`. No `secrets: inherit`.
-- Review qualification and effective settings with appropriate owner access, then
-  separately authorize activation. Change exactly the `publish-central` job guard
-  in `release.yml` from `${{ false && github.run_attempt == 1 }}` to
-  `${{ github.run_attempt == 1 }}`, and the `finalize` guard in
-  `verify-release.yml` from `${{ false }}` to `${{ success() }}`. Update the
-  structural activation tests in that same reviewed activation change. Preserve
-  all attempt, first-time reservation, source, signing-input and dependency guards.
+- Review and commit J7 separately, require hosted CI to pass, and confirm effective
+  settings and credentials with owner access. The publisher retains
+  `${{ github.run_attempt == 1 }}`; the finalizer uses `${{ success() }}` and needs
+  successful verification. Activation and actual publication are separate decisions;
+  confirm Central capacity before explicitly authorizing any real release dispatch.
 
 No live tag/upload/release test is part of routine qualification. Successful live
 execution and effective protected-token behavior remain unverified until separately
-authorized activation/release work.
+authorized real release work. Never dispatch Release merely to test activation or
+retry a verification timeout; investigate uncertain publication manually and use
+Verify Release only for distribution verification and exact GitHub finalization.

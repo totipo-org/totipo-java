@@ -110,8 +110,8 @@ jobs:
           printf 'inventory=%s\n' "$inventory" >> "$GITHUB_OUTPUT"
 
   publish-central:
-    # J4B ACTIVATION GUARD: only a separately reviewed source change may enable mutation.
-    if: ${{ false && github.run_attempt == 1 }}
+    # Only the first attempt of an explicit manual release may publish.
+    if: ${{ github.run_attempt == 1 }}
     needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 90

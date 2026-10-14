@@ -232,9 +232,9 @@ Maven Central is the binary distribution channel; the manually dispatched
 [Release workflow](.github/workflows/release.yml) qualifies source, signs and
 accepts inputs, reserves an immutable version tag, then publishes once using
 frozen outputs. It independently verifies Central and creates the GitHub Release.
-**Live release mutations remain disabled**;
-this is the intended automatic experience after separate owner activation. Start
-Release once with the exact reviewed version/SHA; use the independently rerunnable
+**J7 enables the release jobs after its reviewed commit**; publication still requires
+manual dispatch and owner confirmation of Central capacity or an approved adjustment/exemption.
+Start Release once with the exact reviewed version/SHA; use the independently rerunnable
 [Verify Release workflow](.github/workflows/verify-release.yml) for verification
 recovery, never a publication rerun.
 Applications consuming that version use Maven Central and:
@@ -266,7 +266,7 @@ Independent
 session object-candidate validation is retained, without import or root export.
 Specification revisions do not mechanically dictate Java semantic versions.
 See [the release checklist](RELEASE_CHECKLIST.md) for exact provenance,
-credential-free validation, settings prerequisites and the separate activation boundary.
+credential-free validation, settings prerequisites and the Central capacity gate.
 The [J1.1 namespace migration report](review/J1_1_NAMESPACE_MIGRATION_REPORT.md)
 records the namespace migration and supersedes J1 coordinates. The v0.1.1
 preparation validation is recorded in the

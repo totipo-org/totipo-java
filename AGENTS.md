@@ -242,7 +242,8 @@ Signing failure must stop before reservation. Internal plugin HTTP retries
 are accepted without claiming exactly-once delivery. Existing tags prohibit ordinary
 republication. Use Verify Release for independently rerunnable verification.
 
-J4B's literal false guards on `release.yml`'s `publish-central` and
-`verify-release.yml`'s `finalize` jobs must remain disabled until a separate owner
-activation change. Routine qualification authorizes no live release mutation.
-See RELEASE_CHECKLIST.md for effective settings and exact activation prerequisites.
+J7 enables `release.yml`'s first-attempt publisher and `verify-release.yml`'s
+success-only finalizer. Publication still requires explicit manual version/SHA
+dispatch and owner confirmation of Central capacity or an approved adjustment/exemption.
+Routine qualification authorizes no live release mutation.
+See RELEASE_CHECKLIST.md for effective settings and pre-release prerequisites.
