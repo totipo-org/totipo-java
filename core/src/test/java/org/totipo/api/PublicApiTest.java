@@ -88,7 +88,10 @@ class PublicApiTest {
         assertEquals(metadata, refresh(session).token(result.tokenId()).orElseThrow().heads().get(0).metadata());
         // An update authors a new object: absent operation metadata does not replace parent metadata.
         try (var update = session.state().update(head)) { saved(update.issuer("new assertion").save()); }
-        assertEquals(ClientMetadata.empty(), refresh(session).token(result.tokenId()).orElseThrow().heads().get(0).metadata());
+        var updatedHead = refresh(session).token(result.tokenId()).orElseThrow().heads().get(0);
+        assertEquals(ClientMetadata.empty(), updatedHead.metadata());
+        assertEquals(head, updatedHead.parents().get(0));
+        assertEquals(metadata, updatedHead.parents().get(0).metadata());
         session.close();
         assertEquals(metadata, head.metadata());
         assertEquals(metadata, represented.alternatives().get(0).heads().get(0).metadata());

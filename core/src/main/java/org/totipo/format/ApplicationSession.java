@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 
 /** Session owner and adapter. No protocol-bearing object escapes through application projections. */
 final class ApplicationSession implements VaultSession {
+    private final Object sessionIdentity = new Object();
     private final byte[] root;
     private final VaultId vaultId;
     private final org.totipo.spi.TotipoStore store;
@@ -33,11 +34,11 @@ final class ApplicationSession implements VaultSession {
     private final ApplicationStates publisher;
     /**
      * Causal/topological facts derived from a validated TOKEN, keyed by OBJECT_ID.
-     * This is not a retained representation of that TOKEN: it contains no value or
-     * metadata and is consumed only by Merge.additional() for same-token ancestry.
-     * Public current/captured heads retain exact per-object metadata independently.
+     * Contains only non-secret metadata, causal references and opaque value keys,
+     * never complete TOKEN values, secrets or encrypted payloads.
      */
-    private record CausalFact(org.totipo.TokenId token, List<ObjectId> parents) { }
+    record CausalFact(org.totipo.TokenId token, List<ObjectId> parents,
+                              ClientMetadata metadata, long valueKey) { }
     // Replaced each observation; captured states/merge bases may retain an older causal index.
     private Map<ObjectId, CausalFact> ancestry = Map.of();
 
@@ -97,7 +98,7 @@ final class ApplicationSession implements VaultSession {
             var links = new HashMap<ObjectId, CausalFact>();
             var tokens = new ArrayList<TokenState>();
             // Complete semantic values (not TOKEN objects) are interned for captured alternatives.
-            // There is no historical OBJECT_ID -> value lookup; captured heads keep their metadata.
+            // Historical heads retain only opaque value keys alongside descriptive facts.
             // Equality-map entries own their secrets; redundant parsed copies are wiped after projection.
             var redundant = new ArrayList<SecurityBytes>();
             for (var object : observation.validatedTokens()) {
@@ -109,12 +110,16 @@ final class ApplicationSession implements VaultSession {
             for (var entry : graph.perToken().entrySet()) {
                 var id = publicId(entry.getKey());
                 var view = entry.getValue();
-                view.objects().forEach(o -> links.put(o.objectId(), new CausalFact(id, o.token().parents())));
+                var facts = new LinkedHashMap<ObjectId, CausalFact>();
+                view.objects().forEach(o -> facts.put(o.objectId(), new CausalFact(id, o.token().parents(),
+                        metadata(o.token().metadata()), valueIds.get(o.token().value()))));
+                links.putAll(facts);
+                var history = new History(sessionIdentity, facts);
                 var heads = new ArrayList<TokenHead>();
                 var grouped = new LinkedHashMap<Long, List<TokenHead>>();
                 for (var object : view.heads()) {
                     long value = valueIds.get(object.token().value());
-                    var head = new Head(this, id, revision(object.objectId()), metadata(object.token().metadata()), value);
+                    var head = history.heads.get(object.objectId());
                     heads.add(head); grouped.computeIfAbsent(value, ignored -> new ArrayList<>()).add(head);
                 }
                 var alternatives = new ArrayList<TokenAlternative>();
@@ -187,7 +192,7 @@ final class ApplicationSession implements VaultSession {
     }
     Head head(TokenHead reference) {
         Objects.requireNonNull(reference);
-        if (!(reference instanceof Head h) || h.owner != this) throw new IllegalArgumentException("Foreign head");
+        if (!(reference instanceof Head h) || h.sessionIdentity != sessionIdentity) throw new IllegalArgumentException("Foreign head");
         return h;
     }
     private static TokenDescriptor descriptor(TokenValue v) {
@@ -217,22 +222,43 @@ final class ApplicationSession implements VaultSession {
         for (var a : alternatives) grouped.computeIfAbsent(getter.apply(a.descriptor()), ignored -> new ArrayList<>()).add(a);
         return new CompetingField<>(grouped.entrySet().stream().map(e -> new CompetingField.Value<>(e.getKey(), e.getValue())).toList());
     }
+    /** One immutable graph per token observation, built without recursively following edges.
+     * Parent views resolve against this graph only, even for defensively cyclic graphs.
+     * Neither heads nor the graph retain the session or its secret/value tables.
+     */
+    static final class History {
+        final Map<ObjectId, Head> heads;
+        History(Object sessionIdentity, Map<ObjectId, CausalFact> facts) {
+            var built = new HashMap<ObjectId, Head>();
+            facts.forEach((id, fact) -> built.put(id, new Head(sessionIdentity, id, fact, this,
+                    fact.parents().stream().filter(facts::containsKey).toList())));
+            heads = Map.copyOf(built);
+        }
+    }
     static final class Head implements TokenHead {
-        final ApplicationSession owner;
+        final Object sessionIdentity;
         final org.totipo.TokenId tokenId;
         final RevisionId revision;
         final ClientMetadata metadata;
         final long key;
-        Head(ApplicationSession owner, org.totipo.TokenId tokenId, RevisionId revision, ClientMetadata metadata, long key) {
-            this.owner = owner; this.tokenId = tokenId; this.revision = revision; this.metadata = metadata; this.key = key;
+        private final List<TokenHead> parents;
+        Head(Object sessionIdentity, ObjectId id, CausalFact fact, History history, List<ObjectId> resolved) {
+            this.sessionIdentity = sessionIdentity; tokenId = fact.token(); revision = ApplicationSession.revision(id);
+            metadata = fact.metadata(); key = fact.valueKey();
+            // The map is sealed before publication. No lazy mutation or per-access allocation.
+            parents = Collections.unmodifiableList(new AbstractList<>() {
+                @Override public TokenHead get(int index) { return history.heads.get(resolved.get(index)); }
+                @Override public int size() { return resolved.size(); }
+            });
         }
         @Override public org.totipo.TokenId tokenId() { return tokenId; }
         @Override public RevisionId revision() { return revision; }
         @Override public ClientMetadata metadata() { return metadata; }
+        @Override public List<TokenHead> parents() { return parents; }
         @Override public boolean equals(Object other) {
-            return other instanceof Head h && owner == h.owner && tokenId.equals(h.tokenId) && revision.equals(h.revision);
+            return other instanceof Head h && sessionIdentity == h.sessionIdentity && tokenId.equals(h.tokenId) && revision.equals(h.revision);
         }
-        @Override public int hashCode() { return Objects.hash(System.identityHashCode(owner), tokenId, revision); }
+        @Override public int hashCode() { return Objects.hash(System.identityHashCode(sessionIdentity), tokenId, revision); }
     }
     static final class Alternative implements TokenAlternative {
         final ApplicationSession owner;

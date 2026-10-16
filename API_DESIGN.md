@@ -418,7 +418,41 @@ all three heads remain visible. Applications need not reconstruct grouping.
 
 `TokenAlternative` exposes its non-secret `TokenDescriptor` and immutable heads.
 The descriptor contains status, issuer, account, algorithm, digits and period.
-`TokenHead` exposes token identity, `RevisionId` and exact `ClientMetadata`.
+`TokenHead` exposes token identity, `RevisionId`, exact `ClientMetadata` and
+`parents(): List<TokenHead>`. Parents are the resolved, validated immediate causal
+parents of that exact revision, in canonical revision order, including for historical
+heads. Recursive traversal follows the actual TOKEN graph, including merges, folds,
+equal-valued branches and tombstones; it never chooses a winning branch. Roots
+have no parents. Every list and head is immutable, thread-safe and I/O-free.
+
+Each token observation shares one historical head per available revision, so common
+ancestors reached along different paths are the same object. A later observation
+can resolve more parents or lose available objects without changing captured graphs.
+Heads and ancestry remain descriptively readable after close and retain no active
+session or store handle. Metadata and ancestry do not participate in head identity.
+Historical heads use the ordinary same-session reference rules for `update(head)`;
+they expose no historical credential values, secret export or new mutation methods.
+
+Unavailable, invalid, unauthenticated and wrong-token parent references never become
+fabricated heads. `TokenState.unresolvedReferences()` already covers known unresolved
+edges of **all** validated token revisions in the corresponding observation, including
+historical children, rather than only current heads. Pair it with that state's
+`observation()` and `diagnostics()` to distinguish available ancestry from known gaps
+and incomplete/unavailable observations. An empty parent list alone cannot distinguish
+a root from a revision whose parents are all unavailable. No API can guarantee that
+an unavailable revision never existed, even when no known gaps or diagnostics remain.
+Use a visited set when traversing defensively: graph evaluation preserves its existing
+cycle semantics, and projection construction never recursively follows edges.
+
+History retains non-secret metadata and causal links, plus opaque session-local value
+keys for existing update behavior, without retaining additional credential values,
+decrypted secrets or encrypted payloads. Construction costs O(V + E) time and space
+per token observation; parent access reuses an immutable list with O(1) indexed lookup.
+Keeping any historical head retains that token observation's shared graph, including
+other branches. Separate retained observations can each retain O(V + E) descriptive
+data; no cross-observation cache is maintained. The existing session value retention
+and close-time wiping policy is unchanged.
+
 Client time uses optional unsigned-u64 raw long bits, with no freshness policy.
 Metadata is outside semantic value equality. An absent client name differs from a
 present empty name; exact validated Unicode text is retained without normalization.
