@@ -4,6 +4,10 @@
 out/
 .idea/
 *.iml
+# Eclipse/Buildship and JDTLS project state.
+.project
+.classpath
+.settings/
 result
 result-*
 .DS_Store

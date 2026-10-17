@@ -7,6 +7,7 @@ import org.gradle.api.publish.maven.tasks.GenerateMavenPom
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
 import org.gradle.plugins.signing.Sign
+import org.gradle.plugins.ide.eclipse.model.EclipseModel
 
 plugins {
     base
@@ -43,6 +44,13 @@ if (centralRelease) tasks.register<Exec>("verifyCentralSigningInputs") {
 }
 
 subprojects {
+    // Buildship applies the Eclipse plugin during import; ordinary builds need not.
+    pluginManager.withPlugin("eclipse") {
+        extensions.configure<EclipseModel> {
+            classpath.defaultOutputDir = layout.buildDirectory.dir("eclipse/default").get().asFile
+            classpath.baseSourceOutputDir.set(layout.buildDirectory.dir("eclipse"))
+        }
+    }
     val freezePublicationInputs = centralUpload
     apply(plugin = "java-library")
     group = "org.totipo"

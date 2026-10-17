@@ -160,6 +160,40 @@ then require the separate human fixed-cache regeneration and exhaustive review
 checkpoint above, followed by qualification in the order specified in AGENTS.md.
 These maintenance operations are separate from routine development and qualification.
 
+Eclipse/Buildship and JDTLS also resolve dependency source JARs, which need their
+own verification entries. To download and verify them without generating IDE files:
+
+```sh
+java-ide-sources
+```
+
+After an intentional dependency update, append `--write-verification-metadata sha256`
+to that command to generate missing source checksums. Review the diff and compare
+the hashes with fresh canonical Maven Central artifacts before accepting them.
+This opt-in helper uses Gradle's Eclipse classpath model and does not change locks
+or disable verification. Ordinary test and dependency-report tasks do not request
+these sources. Once the source checksums are accepted, remove any IDE-local
+`--dependency-verification=off` arguments and refresh the Gradle project. The
+dependency-input cache checkpoint and qualification policy above still apply.
+
+Eclipse and JDTLS compiler output goes under each module's `build/eclipse/`,
+separate from Gradle's classes. Refresh the Gradle project after importing changes
+to pick up these paths. Generated `.project`, `.classpath` and `.settings/` files
+are local IDE state and ignored.
+
+The devShell consumes `java-dev-tools.lib.mkJavaEditor` with this project's JDK
+and Gradle, merging its `shellEnv` to supply Gradle discovery for Eclipse/Buildship.
+That separate flake owns the JDTLS source-navigation proxy, its tests,
+automatic client-capability negotiation, workspace isolation and `java-ide-sources`
+command. Helix uses its built-in `jdtls` configuration; no project language-server
+settings are needed. Reload the development environment and restart Helix after
+changing the input. Source checksums and Eclipse output layout remain project-owned.
+
+The [java-dev-tools](https://github.com/ingon/java-dev-tools) flake input is pinned
+by this repository's lockfile and follows its existing nixpkgs input. Other Java
+projects can consume the same helper with their own JDK and Gradle; no editor
+implementation or project-local Helix configuration needs copying.
+
 Record milestone classification before choosing validation. Follow the durable
 [qualification ladder](AGENTS.md#milestone-qualification-ladder): one ordinary
 `gradle test` baseline, focused module/API tests during iteration, then once
