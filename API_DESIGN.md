@@ -17,22 +17,10 @@ normal application entry points. See README for release availability and coordin
 Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
 <!-- prepared-release:end -->
 
-Release preparation is reviewed source editing, not an automated mutation
-transaction. The intended post-activation release process is one manual Actions
-dispatch bound to exact source, signing/input acceptance then first-time tag reservation before one Gradle
-publication invocation, independently repeatable verification and exact GitHub
-Release creation/validation. J4B keeps mutation jobs disabled pending separate
-owner activation. See RELEASE_CHECKLIST.md. This release policy is separate from
-application object-publication and retry contracts below.
-
-Supported builds require the locked Nix JDK 25 / Gradle 9.8.0 environment.
-Gradle owns standard compilation and archive assembly; production targets Java 17.
-Publication validation checks the ten whole artifacts, essential coordinates and
-dependency semantics. It does not compare JAR members with classes, sources or
-generated Javadocs. Reproducible hashes bind complete bytes, while product tests
-and real module-metadata/POM-only consumers establish behavior and usability.
-Consistent mispackaging that satisfies those checks is an accepted residual risk.
-
+Repository setup and IDE guidance live in the [development guide](docs/DEVELOPMENT.md).
+The [release checklist](RELEASE_CHECKLIST.md) owns release orchestration,
+publication acceptance and its verification limits. Release publication is separate
+from application object-publication and retry contracts below.
 
 0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
 Independent object-candidate validation is retained.
@@ -691,7 +679,7 @@ qualification.
 
 ## r19 conformance scope and application responsibilities
 
-README scopes v1 core conformance to the protocol foundation operations and v1 store
+V1 core conformance is scoped to the protocol foundation operations and v1 store
 conformance to qualified NIO storage with the applicable core orchestration. No v1
 application conformance is claimed. The term application API describes a library
 boundary; it does not establish conformance of a desktop or Android application.
