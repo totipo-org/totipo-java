@@ -188,3 +188,37 @@ Opening NIO observes an existing safe root without creating namespaces, objects,
 VAULT, normalization or cleanup. The two-module implementation bridge
 `format.VaultLifecycle` uses TotipoStore directly; codecs and protocol algorithms
 remain internal. There is one provider boundary.
+
+## Restore allocation authority
+
+`RestoreReservation extends TotipoStore` is a separate opt-in capability, not a
+new ordinary-store default. Its provider must exclusively allocate a previously
+absent location or explicitly recover evidence of that original allocation. It
+binds `archiveSha256()` to one frozen input. This digest is intent recognition,
+not cryptographic validation; core authenticates independently. Android can supply
+its private allocation authority without filesystem Paths or SAF canonical files.
+
+`installVault(bytes)` uses ObjectWrite's create-only/exact-existing outcome model.
+It alone permits bootstrap exact-retry acknowledgement: equality, force of the
+canonical file and containing location, then fresh confirmation, without rewriting
+an existing bootstrap. `acknowledgeLocation()` accepts allocation and parent
+persistence barriers; false/unchecked failure is not completion. No delete, replace,
+rename, generic transaction or registration authority is added. Ordinary
+TotipoStore/createVault behavior remains unchanged.
+
+NioRestore.reserve(parent, child, digest) uses exclusive createDirectory, never a
+check-empty-then-use sequence. A noncanonical exact `.totipo-restore-v1` intent
+marker binds recovery to the original ZIP. Marker/root/parent forces precede VAULT
+and complete installation. NioRestore.recover explicitly checks the marker and
+real root; absent/torn/different evidence is refused without repair. Factory failure
+may leave an allocation but no canonical writes. Closing never deletes that root.
+The child path is exactly parent.resolve(child); there is no generated alternate
+name. A marker remains after success. It is local recovery evidence, not a wire
+protocol extension or tamper-resistant receipt.
+
+Shared reservations use the unchanged hard-link store. The coordinated composition
+factories require the same one persistent delegate, externally serialized whole-root
+owner/bridge contract as coordinatedDelegate. No ATOMIC_MOVE or ordinary-move
+no-replace claim is made for independent writers. Unsupported hard-link/directory
+force capabilities fail or remain uncertain; no weaker fallback exists. The existing
+trusted local namespace model and platform-specific directory-force limits apply.

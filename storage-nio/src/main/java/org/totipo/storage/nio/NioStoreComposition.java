@@ -13,6 +13,18 @@ import java.nio.file.Path;
  * No automatic fallback from ordinary shared hard-link publication exists. */
 public final class NioStoreComposition {
     private NioStoreComposition() { }
+    /** Fresh allocation for the same whole-root externally coordinated owner contract.
+     * Wrap the returned reservation before core use. SAF is never this canonical destination.
+     */
+    public static org.totipo.spi.RestoreReservation reserveRestore(Path parent, String child,
+            String archiveSha256, StorageDurability durability) throws IOException {
+        return NioRestore.reserve(parent, child, archiveSha256, durability, true);
+    }
+    /** Explicitly recover this provider's retained allocation intent for the same frozen ZIP. */
+    public static org.totipo.spi.RestoreReservation recoverRestore(Path root,
+            String archiveSha256, StorageDurability durability) throws IOException {
+        return NioRestore.open(root.toAbsolutePath(), archiveSha256, durability, true);
+    }
     /** Obtain one persistent move-based delegate to wrap before exposing it to core or bridges. */
     public static TotipoStore coordinatedDelegate(Path root, StorageDurability durability) throws IOException {
         return NioTotipoStore.open(root,

@@ -7,7 +7,7 @@ import java.util.*;
 import java.util.function.BooleanSupplier;
 import static org.totipo.backup.BackupException.Reason.*;
 
-/** Authenticated encrypted replay. All methods run under the owning session provider gate. */
+/** Authenticated encrypted replay. Serialized by the owning session gate or detached plan monitor. */
 final class HistoryImport implements AutoCloseable {
     private final BackupZip.Archive archive;
     private final byte[] vault;
@@ -27,6 +27,20 @@ final class HistoryImport implements AutoCloseable {
                                  TotipoStore store, BooleanSupplier closing) throws IOException {
         byte[] vault = archive.payload(1);
         if (!Arrays.equals(vault, canonical)) throw new BackupException(VAULT_CHANGED);
+        int gaps = validateArchive(archive, root, closing);
+        var plan = new HistoryImport(archive, vault, gaps);
+        var reason = plan.preflight(store, closing);
+        if (reason == ImportResult.Reason.SESSION_CLOSING) throw new org.totipo.SessionClosedException();
+        if (reason != ImportResult.Reason.NONE) throw new BackupException(switch (reason) {
+            case CANCELLED -> CANCELLED;
+            case SESSION_CLOSING -> CANCELLED;
+            case VAULT_CHANGED -> VAULT_CHANGED;
+            case TARGET_CONFLICT -> TARGET_CONFLICT;
+            default -> SOURCE_UNAVAILABLE;
+        });
+        return plan;
+    }
+    static int validateArchive(BackupZip.Archive archive, byte[] root, BooleanSupplier closing) throws IOException {
         var facts = new HashMap<ObjectId, Fact>();
         for (int i = 0; i < archive.summary.objects(); i++) {
             BackupZip.cancelled();
@@ -43,17 +57,20 @@ final class HistoryImport implements AutoCloseable {
             var target = facts.get(parent);
             if (target == null || !target.token.equals(fact.token)) gaps++;
         }
-        var plan = new HistoryImport(archive, vault, gaps);
-        var reason = plan.preflight(store, closing);
-        if (reason == ImportResult.Reason.SESSION_CLOSING) throw new org.totipo.SessionClosedException();
-        if (reason != ImportResult.Reason.NONE) throw new BackupException(switch (reason) {
-            case CANCELLED -> CANCELLED;
-            case SESSION_CLOSING -> CANCELLED;
-            case VAULT_CHANGED -> VAULT_CHANGED;
-            case TARGET_CONFLICT -> TARGET_CONFLICT;
-            default -> SOURCE_UNAVAILABLE;
-        });
-        return plan;
+        return gaps;
+    }
+    static HistoryImport replay(BackupZip.Archive archive, byte[] vault, int gaps) {
+        return new HistoryImport(archive, vault, gaps);
+    }
+    boolean exactInventory(TotipoStore store) {
+        if (binding(store) != ImportResult.Reason.NONE) return false;
+        try {
+            for (int i = 0; i < knowledge.length; i++) {
+                var read = store.readObject(new ObjectName(archive.name(i)), 1024);
+                if (!(read instanceof BoundedRead.Present p) || !Arrays.equals(p.bytes(), archive.payload(i + 2))) return false;
+            }
+            return binding(store) == ImportResult.Reason.NONE;
+        } catch (RuntimeException failure) { return false; }
     }
     private ImportResult.Reason binding(TotipoStore store) {
         try {
@@ -121,7 +138,7 @@ final class HistoryImport implements AutoCloseable {
         reason = binding(store);
         return result(reason, reason == ImportResult.Reason.NONE);
     }
-    private ImportResult result(ImportResult.Reason reason, boolean complete) {
+    ImportResult result(ImportResult.Reason reason, boolean complete) {
         int added = 0, retained = 0, uncertain = 0, remaining = 0;
         for (int i = 0; i < knowledge.length; i++) {
             if (knowledge[i] == 2) uncertain++;
@@ -133,6 +150,16 @@ final class HistoryImport implements AutoCloseable {
                 : complete ? (mayHaveInstalled ? ImportResult.Outcome.COMPLETE : ImportResult.Outcome.NO_OP)
                 : added + retained > 0 ? ImportResult.Outcome.PARTIAL : ImportResult.Outcome.FAILED;
         return new ImportResult(outcome, added, retained, uncertain, remaining, reason);
+    }
+    List<RestoreResult.ObjectReceipt> receipts() {
+        var result = new ArrayList<RestoreResult.ObjectReceipt>(knowledge.length);
+        for (int i = 0; i < knowledge.length; i++) {
+            var state = knowledge[i] == 2 ? RestoreResult.Knowledge.UNCERTAIN
+                    : knowledge[i] == 0 ? RestoreResult.Knowledge.REMAINING
+                    : installed[i] ? RestoreResult.Knowledge.INSTALLED : RestoreResult.Knowledge.RETAINED;
+            result.add(new RestoreResult.ObjectReceipt(new org.totipo.RevisionId(archive.name(i)), state));
+        }
+        return List.copyOf(result);
     }
     @Override public void close() { archive.close(); Arrays.fill(vault, (byte) 0); }
 }

@@ -825,3 +825,105 @@ The root-compromise guidance in §8.1 is informative and defines no migration or
 re-key protocol. Cycle-safe traversal and defensive same-ID exclusion remain
 required despite the informative constructibility notes. UI wording, untrusted-text
 rendering, warnings and confirmation belong to the consuming application.
+
+## Detached restore into a new location
+
+`BackupArchives.prepareRestore(input, limits, password)` verifies and freezes the
+complete profile-1 ZIP, authenticates its canonical VAULT using the ordinary
+unlocker, and validates every object through the same validator used by R2 import.
+It recomputes archive-only missing/wrong-token ancestry diagnostics. All candidates
+must pass before returning authority; missing ancestry remains valid limited
+history. Password characters stay caller-owned; owned UTF-8, wrapping key, root
+copies and transient TOKEN secrets are wiped before return. Invalid password
+encoding is a programmer error; AUTHENTICATION_FAILED may mean corrupted bytes.
+The returned `BackupRestore` owns bounded ciphertext, no root/password/session.
+It exposes summary, one destination installation, explicit retry, cancel and close.
+Descriptive inspection, manifest claims, CRCs and public summaries confer no
+installation authority. The archive profile, limits and golden ZIPs are unchanged.
+
+For Desktop, authenticate before reserving a selected parent's new direct child:
+
+```java
+try (BackupRestore plan = BackupArchives.prepareRestore(input, BackupLimits.DEFAULT, password)) {
+    RestoreResult receipt = plan.install(NioRestore.reserve(parent, child, plan.summary().archiveSha256()));
+    // Retain receipt and path; register/open separately only after COMPLETE.
+}
+```
+
+An admitted install transfers ownership of the reservation even on a rejected
+result. Closed-plan/second-install programmer errors do not transfer a new handle.
+A plan binds one reservation; `retry()` repeats exact ciphertext on that allocation.
+Close waits for admitted work, wipes ciphertext and releases its provider handle;
+it never deletes the allocation, intent marker, bootstrap or objects. Applications
+must close plans and reservations abandoned before ownership transfer. A plan's
+monitor serializes its own operations only; no cryptographic/application lock is
+held during provider calls and no application callbacks are invoked.
+
+NIO exclusively creates the child directory, refusing every preexisting entry,
+including empty directories, files and links. It writes `.totipo-restore-v1`, a
+non-secret allocation intent bound to the frozen ZIP SHA-256. Location barriers
+force the marker, root and parent before canonical installation and at completion.
+Bootstrap installation uses the existing complete-stage create-only publisher.
+Exact-existing recovery forces the actual canonical file, root and parent and
+freshly reconfirms exact bytes, without rewriting/touching/chmod/renaming it. This
+resolves the bootstrap durability acknowledgement gap without changing ordinary
+`createVault`'s AlreadyPresent behavior. There is no ATOMIC_MOVE assumption or
+hard-link failure fallback. Shared mode retains hard-link exclusion; coordinated
+mode retains its external whole-root owner requirement.
+
+Restoration installs VAULT first, then uses R2's immutable publication/preflight,
+per-object binding, cumulative acknowledgement and exact-retry machinery. After
+all acknowledgements it freshly rereads every planned object and exact VAULT,
+acknowledges location persistence, and repeats exact inventory/identity checking.
+Equality with the privately authenticated frozen bootstrap revalidates that exact
+representation, including its authenticated wrapping/root, without retaining a
+password/root or introducing a second KDF. No new bootstrap, root or encryption is
+generated. Completion covers the archive membership, not unknown/future history,
+remote propagation, absence of concurrent additions or application observation.
+
+`RestoreResult` distinguishes REJECTED (no canonical installation acknowledged or
+possibly entered by this plan), COMPLETE, PARTIAL and UNCERTAIN. Bootstrap knowledge
+is independently NOT_INSTALLED, ACKNOWLEDGED or UNCERTAIN. Location acknowledgement
+is per attempt; an entered failed/throwing location barrier remains uncertain until
+positive recovery. Cumulative object counts follow ImportResult; bounded immutable
+sorted inventory receipts identify each revision as remaining, installed, retained
+or uncertain. Read equality alone never clears lost publication acknowledgements.
+An acknowledged bootstrap with zero acknowledged objects is already PARTIAL.
+Uncertainty takes precedence; failed/cancelled retries preserve prior knowledge.
+REJECTED does not imply that the reserved directory/marker was removed. An incomplete
+receipt must never be presented as completed restoration, even if a normal open
+could authenticate the bootstrap and observe a subset of history.
+
+`cancel()` permanently stops new publication at bounded boundaries without waiting
+for already entered provider calls. Close also cancels before waiting. Interruption
+is checked before allocation barriers/bootstrap and between object publications;
+provider interruption may produce uncertainty. Late cancellation can lose to a
+completed acknowledged batch. There is no forced interruption of blocked provider
+I/O or ingress. A new plan is required after cancel/close; ordinary thread
+interruption can be cleared by the caller before explicit same-handle retry.
+
+After interruption/shutdown, reselect the **same exact ZIP**, authenticate it again,
+and explicitly call `NioRestore.recover(root, plan.summary().archiveSha256())` before
+installing the new plan. Recovery requires the exact provider intent marker, real
+root and same archive digest; it never treats an existing destination as fresh.
+Canonical exact bytes receive acknowledgement barriers; different/unsuitable bytes
+are preserved and refused. No marker or a torn/mismatching marker is a quarantine
+condition: retain the directory for explicit investigation and select another new
+child. Failure during reservation itself can leave this residue, but no canonical
+publication has begun. Markers remain after COMPLETE for receipt recovery and are
+not protocol objects or proof against a hostile same-privilege process. A restarted
+plan reports newly learned acknowledgements; it cannot reconstruct which prior
+process created an exact object. Prior application journal receipts remain evidence.
+
+Android may implement `RestoreReservation` through its existing private allocation
+and storage authority; no Path or SAF canonical-storage requirement exists in core.
+Its owner must durably journal allocation intent before Java publication, retain
+partial/unregistered roots, and distinguish complete/partial/uncertain receipts
+before registry promotion. It must wrap coordinated reservations and serialize all
+store/bridge/handle use in the same whole-root domain, invoking plan operations
+outside bridge/application locks. `NioStoreComposition.reserveRestore` and
+`recoverRestore` supply move-based delegates for that owner; they are not independently
+shared-safe. SAF remains borrowed ZIP transport. Java registers/selects/unlocks no
+vault and starts no Sync. Desktop owns worker shutdown, duplicate recognition,
+limited-history disclosure, path presentation and explicit recovery. Normal opening
+and observation are separate, application-authorized steps after storage completion.

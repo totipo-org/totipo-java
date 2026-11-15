@@ -4,9 +4,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import org.totipo.format.BackupZip;
 
-/** Shared stream-only portable ZIP inspection. No extraction, authentication or installation. */
+/** Shared portable ZIP inspection and detached authenticated restore preparation. */
 public final class BackupArchives {
     private BackupArchives() { }
+    /** Freezes/verifies the complete bounded ZIP, authenticates its vault with the original
+     * password and validates every object. Borrows input through EOF without closing it.
+     * Password characters remain caller-owned; do not mutate them during the call. Owned
+     * encodings and derived secrets are wiped before return. No storage access occurs.
+     * Invalid password encoding is a programmer error. Caller must close the detached plan.
+     * @throws IOException archive, authentication, validation, capacity or cancellation failure
+     */
+    public static BackupRestore prepareRestore(InputStream input, BackupLimits limits, char[] password) throws IOException {
+        return org.totipo.format.NewLocationRestore.prepare(input, limits, password);
+    }
     /** Consumes from the current position through EOF, without closing the borrowed input.
      * Uses bounded private memory; retains no payload after return. Rejects ambiguous ZIP layout,
      * unsupported features, malformed entries and budgets, including trailing bytes. Checks CRCs

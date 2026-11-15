@@ -79,6 +79,15 @@ public final class ConsumerSmoke {
     public static ImportResult applyImport(BackupImport operation) {
         return operation.apply();
     }
+    public static BackupRestore prepareRestore(java.io.InputStream input, char[] password) throws IOException {
+        return BackupArchives.prepareRestore(input, BackupLimits.DEFAULT, password);
+    }
+    public static RestoreResult restoreNewChild(BackupRestore operation, Path parent, String child) throws IOException {
+        return operation.install(org.totipo.storage.nio.NioRestore.reserve(parent, child, operation.summary().archiveSha256()));
+    }
+    public static RestoreResult recoverRestore(BackupRestore operation, Path root) throws IOException {
+        return operation.install(org.totipo.storage.nio.NioRestore.recover(root, operation.summary().archiveSha256()));
+    }
     public static BackupSummary inspect(java.io.InputStream input, BackupLimits limits) throws IOException {
         return BackupArchives.inspect(input, limits);
     }

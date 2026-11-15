@@ -8,7 +8,7 @@ import org.totipo.VaultId;
  * @param vaultId structural identity of the exact encrypted vault
  * @param objects number of encrypted immutable objects
  * @param unresolvedReferences missing or wrong-token parent edges reported by the producer
- * @param sourceAuthenticated true for a library capture or authenticated import plan; false for structural inspection
+ * @param sourceAuthenticated true for a library capture or authenticated import/restore plan; false for structural inspection
  * @param archiveSha256 lowercase SHA-256 of the complete ZIP, an integrity identifier only
  */
 public record BackupSummary(VaultId vaultId, int objects, int unresolvedReferences, boolean sourceAuthenticated,

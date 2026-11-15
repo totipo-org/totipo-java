@@ -250,3 +250,46 @@ session-under-bridge calls are permitted. Release external coordination before
 observation. Full ownership, result accounting and late-cancellation semantics are
 specified in [API_DESIGN.md](../API_DESIGN.md#authenticated-additive-history-import)
 and public Javadocs. R1's ZIP profile and golden bytes are unchanged.
+
+## R3 detached new-location restoration (profile unchanged)
+
+`BackupArchives.prepareRestore(input, limits, originalPassword)` freezes/verifies
+all ZIP bytes and authenticates the canonical bootstrap and every encrypted object
+with existing Java crypto/validation. The owned `BackupRestore` retains ciphertext
+only; passwords/roots/parsed secrets do not survive preparation. A false manifest
+gap claim cannot suppress computed missing/wrong-token ancestry. Missing ancestry
+is retained and reported; invalid encrypted material rejects the whole archive.
+
+Use `NioRestore.reserve(parent, newChild, plan.summary().archiveSha256())` and transfer
+the returned reservation to `plan.install`. Existing entries of every kind are
+refused, including empty directories. No extraction, random-root creation, protocol
+change, re-encryption, overwrite or automatic registration occurs. Canonical bytes
+and planned object inventory are freshly compared with authenticated evidence
+before completion. R2 supplies the shared object validator/replay/acknowledgement
+accounting. New-location and authenticated existing-session import retain separate
+authorities; a detached plan cannot accept an ordinary existing store.
+
+A restore is not a multi-file transaction. A valid bootstrap may be externally
+visible while objects are incomplete. Results separately report overall completion,
+bootstrap acknowledgement, location acknowledgement and cumulative bounded per-object
+knowledge. Bootstrap-only progress is PARTIAL. Lost bootstrap/object/location
+acknowledgements are UNCERTAIN. Complete requires every planned object and bootstrap
+acknowledged plus final exact inventory/identity checks and allocation barriers.
+Do not promote/register/select or describe an incomplete result as a restored vault.
+
+Close/cancel never rolls back canonical data. Same-handle retry is explicit and
+byte-exact. After shutdown or permanent cancel, prepare the same ZIP again and use
+`NioRestore.recover` with the original path and exact archive digest. The provider's
+retained `.totipo-restore-v1` intent marker proves the allocation association under
+its trusted-local model. Recovery forces/reconfirms an exact existing bootstrap;
+it never rewrites it merely to obtain durability acknowledgement. Missing/torn or
+mismatching intent is refused and retained for investigation. An initial reservation
+failure can leave a directory/intent but cannot install canonical data. Mere byte
+equality or ordinary open cannot recover a lost persistence acknowledgement.
+
+Full lifecycle, recovery and Android/Desktop responsibilities are specified in
+[API_DESIGN.md](../API_DESIGN.md#detached-restore-into-a-new-location) and
+[SPI_DESIGN.md](../SPI_DESIGN.md#restore-allocation-authority). Applications own durable
+intent/registry journaling and blocked transport cancellation. Android uses its
+private destination authority, with SAF only for ZIP ingress; Desktop selects a
+parent/new child. Physical Android/other-filesystem qualification remains separate.
