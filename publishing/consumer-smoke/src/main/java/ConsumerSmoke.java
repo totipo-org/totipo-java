@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.io.IOException;
 import org.totipo.storage.nio.NioTotipoStore;
 import org.totipo.storage.nio.NioDurability;
+import org.totipo.backup.*;
 import java.util.concurrent.Flow;
 
 /** Compile/runtime client: read-only store opening, no vault mutation or implementation internals. */
@@ -45,6 +46,9 @@ public final class ConsumerSmoke {
                 // Shared and coordinated factories must link and open without mutating the root.
                 shared.scanObjects();
                 coordinated.scanObjects();
+                if (!(shared.scanObjects(1) instanceof org.totipo.spi.ObjectScan.Complete)
+                        || !(coordinated.scanObjects(1) instanceof org.totipo.spi.ObjectScan.Complete))
+                    throw new AssertionError("Bounded published provider API");
                 if (!(NioTotipo.open(root, new char[0]) instanceof OpenResult.Absent))
                     throw new AssertionError("Ordinary facade should observe absent VAULT");
             }
@@ -56,9 +60,21 @@ public final class ConsumerSmoke {
         }
         System.out.println("Shared/coordinated published factories open read-only");
         System.out.println("Published API and runtime-only BC load successfully");
+        try {
+            BackupArchives.inspect(new java.io.ByteArrayInputStream(new byte[0]), BackupLimits.DEFAULT);
+            throw new AssertionError("Empty bytes accepted as ZIP");
+        } catch (BackupException expected) {
+            if (expected.reason() != BackupException.Reason.MALFORMED) throw expected;
+        }
     }
     public static VaultId vaultId(VaultSession session) {
         return session.vaultId();
+    }
+    public static BackupCapture capture(VaultSession session, BackupLimits limits) throws IOException {
+        return session.captureBackup(limits);
+    }
+    public static BackupSummary inspect(java.io.InputStream input, BackupLimits limits) throws IOException {
+        return BackupArchives.inspect(input, limits);
     }
     public static VaultCreate createVault(TotipoStore store, byte[] bytes) {
         return store.createVault(bytes);

@@ -35,6 +35,10 @@ final class NioObjectScan {
         return NioNamespace.failure(failure);
     }
     static ObjectScan scan(Path root, Operations scans) {
+        return scan(root, scans, Integer.MAX_VALUE);
+    }
+    static ObjectScan scan(Path root, Operations scans, int maximumEntries) {
+        if (maximumEntries < 1) throw new IllegalArgumentException("Positive scan bound required");
         var entries = new ArrayList<ObjectEntry>();
         StoreFailure issue = null;
         try {
@@ -42,6 +46,7 @@ final class NioObjectScan {
             if (directory == null) return new ObjectScan.Complete(List.of());
             try (var children = scans.entries(directory)) {
                 for (var child : children) {
+                    if (entries.size() == maximumEntries) { issue = StoreFailure.CAPACITY; break; }
                     var name = new ObjectName(child.getFileName().toString());
                     EntryKind kind = EntryKind.UNKNOWN;
                     OptionalLong length = OptionalLong.empty();

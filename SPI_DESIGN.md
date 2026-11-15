@@ -24,6 +24,17 @@ It has no TokenId, RevisionId, K_root, authentication, keyed object addressing,
 TOKEN grammar, parent/merge/TOTP or synchronization responsibility.
 There are no protocol-aware provider overloads or public staging handles.
 
+`scanObjects(maximumEntries)` is an opt-in bounded enumeration for backup. It
+counts all direct children, including unrelated names and unsuitable kinds.
+NIO retains at most the positive bound; reaching another child returns
+Incomplete(CAPACITY), while EOF at exactly the bound is Complete if no other
+errors occurred. Existing scan semantics, sorting and fresh-read requirements
+apply. The default returns Incomplete(UNSUPPORTED) without invoking the unbounded
+legacy scan. Legacy `scanObjects()` and ordinary observation are unchanged.
+The new coarse `StoreFailure.CAPACITY` denotes explicit budget exhaustion.
+Namespace and exact-spelling lookups keep their existing behavior; the child
+enumeration budget is not a wall-clock bound on filesystem calls.
+
 | Type | Role |
 | --- | --- |
 | TotipoStore | Cohesive synchronous storage and lifetime boundary |

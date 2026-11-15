@@ -35,6 +35,9 @@ public final class NioTotipoStore implements TotipoStore {
         active(); return NioReads.child(root, "vault", expectedBytes);
     }
     @Override public ObjectScan scanObjects() { active(); return NioObjectScan.scan(root, scans); }
+    @Override public ObjectScan scanObjects(int maximumEntries) {
+        active(); return NioObjectScan.scan(root, scans, maximumEntries);
+    }
     @Override public BoundedRead readObject(ObjectName name, int expectedBytes) {
         active(); Objects.requireNonNull(name); NioReads.expected(expectedBytes);
         if (!NioReads.directName(root, name.value())) return new BoundedRead.Unavailable(StoreFailure.UNSAFE_NAMESPACE);

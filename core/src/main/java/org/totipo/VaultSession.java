@@ -7,6 +7,23 @@ import java.util.concurrent.Flow;
  * @see VaultState
  */
 public interface VaultSession extends AutoCloseable {
+    /** Captures all supported locally observed encrypted history under this session's provider gate.
+     * Requires an open authenticated session; reads bounded enumeration and fresh exact bytes,
+     * validates each object and rechecks the immutable vault binding. Incomplete enumeration,
+     * unreadable/invalid candidates or capacity exhaustion fail without a capture. Missing or
+     * wrong-token ancestry alone is permitted with explicit diagnostics. Unrelated names are ignored.
+     * Concurrent external publications may or may not be included: this is a finite observed set,
+     * not an atomic snapshot, synchronization barrier or global completeness claim. State emissions
+     * do not invalidate it. No canonical writes, assertions, refresh or TOTP computation occur.
+     * Close waits on the gate; interruption is checked between provider calls, not inside blocked I/O.
+     * Returned ciphertext ownership transfers to the caller and survives session close.
+     * @param limits bounded memory/enumeration/archive budgets
+     * @return owned frozen capture; caller must close
+     * @throws java.io.IOException capture evidence, capacity or cancellation failure
+     * @throws SessionClosedException if closing or closed
+     */
+    org.totipo.backup.BackupCapture captureBackup(org.totipo.backup.BackupLimits limits)
+            throws java.io.IOException;
     VaultId vaultId();
     /** Immediate, I/O-free read of the latest emitted state.
      * Library-created 0.2.0 sessions install a distinct state reference per completed observation pass.
@@ -37,17 +54,13 @@ public interface VaultSession extends AutoCloseable {
      * representation accessors return copies. Results retain no session/root reference and may
      * outlive the session. They are descriptive values; only the successful call establishes validation.
      * Enters the normal session serialization/lifecycle gate and rejects work after closing starts.
-     * The default preserves compatibility for external session implementations.
      * @param objectId supplied canonical OBJECT_ID
      * @param representation externally obtained immutable object bytes
      * @return Invalid for candidate validation failure, or Valid with the exact ciphertext snapshot
      * @throws NullPointerException if either argument is null in an open library session
      * @throws SessionClosedException if this library's session is closing or closed
-     * @throws UnsupportedOperationException if an external implementation lacks this capability
      */
-    default ObjectCandidateValidation validateObject(RevisionId objectId, byte[] representation) {
-        throw new UnsupportedOperationException("Candidate validation unavailable");
-    }
+    ObjectCandidateValidation validateObject(RevisionId objectId, byte[] representation);
     /** Rejects entrants, waits for mutating certainty, wipes secrets and completes subscribers. May block.
      * Never waits for subscriber callbacks; safe to call from onNext. A prior fatal termination retains its error. */
     @Override void close();

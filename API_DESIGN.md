@@ -218,6 +218,39 @@ generations, token identity and operation-specific freshness outcomes to decide
 whether late asynchronous results remain relevant. Java supplies no generic
 application cancellation policy.
 
+## Portable encrypted backup capture and inspection
+
+`session.captureBackup(BackupLimits)` captures authenticated locally observed history,
+including non-head revisions, conflicts and tombstones. It holds the session's
+provider gate for bounded enumeration, fresh reads, independent authentication and
+VAULT recheck. Incomplete enumeration or unreadable/invalid supported candidates
+fail; valid missing/wrong-token ancestry is retained with an explicit unresolved
+reference count. No later state emission invalidates the frozen capture. Independent
+writers remain external to the gate; coverage is a finite observed set, never an
+atomic snapshot, remote freshness or global completeness claim.
+
+The returned `BackupCapture` owns bounded ciphertext memory, retains no root or
+session, survives session closure, and must be closed. `writeTo(OutputStream)`
+finishes a portable ZIP without closing/flushing the caller's stream. Caller close,
+readback and destination durability remain separate outcomes. `BackupArchives.inspect`
+consumes a borrowed stream through EOF and structurally validates the entire bounded
+ZIP, returning only a descriptive summary. It does no object authentication, restore
+or import. CRC and whole-ZIP SHA-256 establish no cryptographic authenticity.
+
+These are new blocking archive operations, outside the existing A–H operation
+taxonomy: capture is authenticated provider work; detached output and inspection
+are stream work. They belong off the UI thread. Interruption is checked at bounded
+safe points, not inside blocked I/O. Session close waits for admitted capture; a
+detached write no longer uses the session. Capture is a required VaultSession
+operation. Initial hard ceilings
+are 4096 objects, 8192 direct-child observations and 6 MiB ZIP bytes; callers may
+lower them and capacity never silently truncates history.
+
+The [frozen profile, ownership, failure and concurrency contract](docs/BACKUP_ARCHIVE.md)
+and [shared fixtures](core/src/test/resources/backup/profile-1/README.md) are normative
+application-format documentation. v1/r19 is unchanged. Android SAF and Desktop
+destination operations remain application responsibilities, separately qualified.
+
 ## Independent immutable object candidates
 
 `session.validateObject(RevisionId objectId, byte[] representation)` synchronously
@@ -269,9 +302,8 @@ All candidate-related failures collapse to Invalid, including AEAD failure and
 wrong root. Provider crypto unavailability retains the existing sanitized runtime
 failure convention; raw cryptographic exceptions are not exposed. Repeated calls
 perform bounded CPU work each time, so callers control scheduling and total work.
-The default interface method throws `UnsupportedOperationException` for external
-VaultSession implementations that have not supplied this additive capability.
-Library-created sessions implement it.
+Candidate validation is a required VaultSession operation. The interface provides
+no unsupported-operation fallback; every implementation must supply it.
 
 ## Replay-latest stream
 

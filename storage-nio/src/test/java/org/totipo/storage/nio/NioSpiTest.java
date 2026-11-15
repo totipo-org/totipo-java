@@ -21,6 +21,20 @@ class NioSpiTest {
     @TempDir Path root;
     private static final ObjectName NAME = new ObjectName("opaque");
     private static final byte[] BYTES = {1, 7, 3};
+    @Test void boundedScanCountsJunkAndKindsAndNeverClaimsTruncatedCompleteness() throws Exception {
+        Path directory = directory();
+        Files.write(directory.resolve("junk"), BYTES);
+        Files.createDirectory(directory.resolve("directory"));
+        Files.createSymbolicLink(directory.resolve("link"), root.resolve("absent"));
+        try (var store = open()) {
+            var limited = assertInstanceOf(ObjectScan.Incomplete.class, store.scanObjects(2));
+            assertEquals(StoreFailure.CAPACITY, limited.reason());
+            assertEquals(2, limited.entries().size());
+            assertEquals(store.scanObjects(), store.scanObjects(3));
+            assertInstanceOf(ObjectScan.Complete.class, store.scanObjects(4));
+            assertThrows(IllegalArgumentException.class, () -> store.scanObjects(0));
+        }
+    }
     private NioTotipoStore open() throws IOException { return NioTotipoStore.open(root, directory -> {}); }
     private Path directory() throws IOException { return Files.createDirectory(root.resolve("objects-v1")); }
 

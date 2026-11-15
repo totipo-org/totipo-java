@@ -49,6 +49,18 @@ final class ApplicationSession implements VaultSession {
         requestRefresh();
     }
     @Override public VaultId vaultId() { return vaultId; }
+    @Override public org.totipo.backup.BackupCapture captureBackup(org.totipo.backup.BackupLimits limits)
+            throws java.io.IOException {
+        requireOpen(); gate.lock();
+        try {
+            requireOpen();
+            return BackupSource.capture(store, root, vaultId, limits);
+        } catch (SecurityException unavailable) {
+            throw new org.totipo.backup.BackupException(org.totipo.backup.BackupException.Reason.SOURCE_UNAVAILABLE);
+        } catch (UnsupportedOperationException unsupported) {
+            throw new org.totipo.backup.BackupException(org.totipo.backup.BackupException.Reason.UNSUPPORTED);
+        } finally { gate.unlock(); }
+    }
     @Override public VaultState state() { return publisher.current(); }
     @Override public Flow.Publisher<VaultState> states() { return publisher; }
     void requireOpen() { if (closing) throw new SessionClosedException(); }
