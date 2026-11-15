@@ -19,7 +19,11 @@ public final class FinalizationProcesses {
     }
     public static Api github(Path root, Path curl, String token) throws IOException {
         require(curl.isAbsolute(), "Explicit curl executable required");
-        require(token != null && token.matches("[A-Za-z0-9_]{1,1024}"), "Missing or invalid GitHub runtime token");
+        // GitHub validates the opaque credential. Locally enforce only presence,
+        // the existing bound and safe insertion into a quoted curl header config.
+        require(token != null && !token.isEmpty() && token.length() <= 1024
+            && token.chars().allMatch(c -> c >= 0x21 && c <= 0x7e && c != '"' && c != '\\'),
+            "Missing or unsafe GitHub runtime token");
         return (method, path, body) -> {
             boolean read = method.equals("GET") && (path.matches("/git/ref/tags/v[^/]+")
                 || path.matches("/git/tags/[a-f0-9]{40}") || path.matches("/releases/tags/v[^/]+"));

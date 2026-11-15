@@ -24,6 +24,22 @@ public final class FinalizationProcessTest {
             var actualAdapter = FinalizationProcesses.github(root, curl, "synthetic_token");
             ok(actualAdapter.request("GET", "/releases/tags/v0.2.0", null).status() == 404);
             ok(actualAdapter.request("POST", "/releases", Map.of("body", "reviewed\nnotes\"\\text")).status() == 404);
+            for (String token : FakeFinalizationCli.TOKENS) {
+                var tokenAdapter = FinalizationProcesses.github(root, curl, token);
+                ok(tokenAdapter.request("GET", "/releases/tags/v0.2.0", null).status() == 404);
+            }
+            Path failingCurl = root.resolve("failing-curl");
+            Files.writeString(failingCurl, "#!" + args[0] + "\nexec '" + executable.replace("'", "'\\''")
+                + "' -cp '" + cp.replace("'", "'\\''") + "' " + FakeFinalizationCli.class.getName() + " fail \"$@\"\n");
+            ok(failingCurl.toFile().setExecutable(true));
+            try {
+                FinalizationProcesses.github(root, failingCurl, FakeFinalizationCli.STATELESS_TOKEN)
+                    .request("GET", "/releases/tags/v0.2.0", null);
+                throw new AssertionError("Failed curl accepted");
+            } catch (IOException error) {
+                ok(!error.getMessage().contains(FakeFinalizationCli.STATELESS_TOKEN)
+                    && error.getCause() == null && error.getSuppressed().length == 0);
+            }
             for (String mode : List.of("ok", "timeout", "overflow", "fail")) {
                 var command = List.of(executable, "-cp", cp, FakeFinalizationCli.class.getName(), mode);
                 if (mode.equals("ok")) ok(FinalizationProcesses.run(root, command, Map.of(), bytes("Authorization: Bearer synthetic_token"), Duration.ofSeconds(5)).endsWith("404"));
@@ -35,7 +51,10 @@ public final class FinalizationProcessTest {
                 }
             }
             reject(() -> FinalizationProcesses.github(root, Path.of("curl"), "synthetic_token"));
-            reject(() -> FinalizationProcesses.github(root, Path.of("/bin/curl"), "token\nheader"));
+            for (String token : List.of("", "x".repeat(1025), "token\nheader", "token\rheader", "token\u0000header",
+                    "token\theader", "token header", "token\"header", "token\\header", "tokené"))
+                reject(() -> FinalizationProcesses.github(root, curl, token));
+            reject(() -> FinalizationProcesses.github(root, curl, null));
             var api = FinalizationProcesses.github(root, Path.of("/bin/curl"), "synthetic_token");
             for (String method : List.of("PATCH", "DELETE", "PUT")) reject(() -> api.request(method, "/git/refs", null));
         } finally { AuthorizationTest.remove(root); }

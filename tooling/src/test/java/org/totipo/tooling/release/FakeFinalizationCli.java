@@ -3,11 +3,16 @@ package org.totipo.tooling.release;
 /** Process fixture; never contacts GitHub or invokes an uploader. */
 public final class FakeFinalizationCli {
     private FakeFinalizationCli() {}
+    // Synthetic JWT-shaped token with dots, base64url punctuation and modern length.
+    static final String STATELESS_TOKEN = "ghs_12345_eyJhbGciOiJSUzI1NiJ9." + "a".repeat(160) + "." + "b_-".repeat(110);
+    static final java.util.List<String> TOKENS = java.util.List.of("synthetic_token", STATELESS_TOKEN,
+        "opaque+token/with~padding==", "opaque:token%with!punctuation", "x".repeat(1024));
     public static void main(String[] args) throws Exception {
         String mode = args[0];
         String config = new String(System.in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        if (!config.contains("Authorization: Bearer synthetic_token")) throw new AssertionError("stdin authentication missing");
-        for (String arg : args) if (arg.contains("synthetic_token")) throw new AssertionError("credential argv");
+        String token = TOKENS.stream().filter(value -> config.contains("Authorization: Bearer " + value)).findFirst()
+            .orElseThrow(() -> new AssertionError("stdin authentication missing"));
+        for (String arg : args) if (arg.contains(token)) throw new AssertionError("credential argv");
         if (args.length > 1 && (!args[1].equals("--disable") || !java.util.List.of(args).contains("--retry")
                 || !args[args.length - 1].startsWith("https://api.github.com/repos/totipo-org/totipo-java/")))
             throw new AssertionError("Unapproved curl arguments");
