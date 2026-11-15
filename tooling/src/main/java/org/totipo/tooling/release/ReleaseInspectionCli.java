@@ -8,6 +8,11 @@ import static org.totipo.tooling.release.SourceFiles.require;
 /** Focused operations; Actions owns qualification, signing, consumers and one Gradle publication invocation. */
 public final class ReleaseInspectionCli {
     private ReleaseInspectionCli() {}
+    // Callers supply fixed labels only. Never print environment values, process
+    // output, response bodies or exception messages from release operations.
+    private static void initialProgress(String command, String phase) {
+        if (command.equals("initial")) System.err.println("Release initial: " + phase);
+    }
     private static void version(Path root, ReleaseInputs inputs) throws IOException {
         require(java.util.Arrays.equals(new SourceFiles(root).read("VERSION", 256),
             (inputs.version() + "\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII)), "Exact staging source VERSION differs");
@@ -55,15 +60,28 @@ public final class ReleaseInspectionCli {
             }
             case "initial", "eligible", "tagged", "reserve", "finalize" -> {
                 require(args.length == 2, "initial|eligible|tagged|reserve|finalize <root>");
+                initialProgress(args[0], "checking requested version and commit");
                 var inputs = ReleaseInputs.from(env);
-                if (args[0].equals("initial")) inputs.initial(env);
+                if (args[0].equals("initial")) {
+                    initialProgress(args[0], "checking dispatch identity");
+                    inputs.initial(env);
+                }
+                initialProgress(args[0], "checking local version, r19 pin and release notes");
                 Path root = Path.of(args[1]); var source = new SourceFiles(root);
                 SourceIdentity.source(source, inputs);
+                initialProgress(args[0], "checking Git HEAD, clean checkout and acquired main ancestry");
                 new GitQueries(root, Path.of(ReleaseInputs.required(env, "RELEASE_GIT"))).source(inputs);
+                initialProgress(args[0], "checking GitHub client configuration");
                 var api = FinalizationProcesses.github(root, Path.of(ReleaseInputs.required(env, "RELEASE_CURL")),
                     ReleaseInputs.required(env, "GH_TOKEN"));
                 switch (args[0]) {
-                    case "initial", "eligible" -> { SourceIdentity.absent(api, inputs); RemoteReleaseState.absent(inputs.version(), new HttpQueries()); }
+                    case "initial", "eligible" -> {
+                        initialProgress(args[0], "checking GitHub tag and release absence");
+                        SourceIdentity.absent(api, inputs);
+                        initialProgress(args[0], "checking Central coordinate absence");
+                        RemoteReleaseState.absent(inputs.version(), new HttpQueries());
+                        initialProgress(args[0], "all checks passed");
+                    }
                     case "tagged" -> SourceIdentity.tag(api, inputs);
                     case "reserve" -> {
                         RemoteReleaseState.absent(inputs.version(), new HttpQueries());
