@@ -9,7 +9,7 @@ acceptance, tooling setup and release procedures; those procedures are not dupli
 ## Environment and focused development
 
 Supported development, qualification and release require Nix. The locked flake
-supplies **JDK 25 and Gradle 9.8.0**. Activate the development shell through direnv
+supplies **JDK 25 and Gradle 9.8.2**. Activate the development shell through direnv
 (`direnv allow`) or `nix develop`; `java` and `gradle` are then available.
 There is no wrapper or separate host-toolchain build path. Production libraries
 compile with `--release 17`; checks inspect every production class for major 61,

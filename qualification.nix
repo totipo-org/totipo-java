@@ -11,7 +11,7 @@ let
     "storage-nio/build.gradle.kts" "storage-nio/gradle.lockfile"
   ];
 in
-assert gradle.version == "9.8.0";
+assert gradle.version == "9.8.2";
 stdenv.mkDerivation (finalAttrs: {
   pname = "totipo-java-qualification";
   inherit version;

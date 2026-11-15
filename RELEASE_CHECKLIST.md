@@ -114,7 +114,7 @@ A human can materialize it with `nix build .#tooling --no-update-lock-file --no-
 and set `TOTIPO_PUBLICATION_TOOL="$PWD/result/bin/totipo-java-tool"` before direct
 host Gradle publication checks. This is tooling materialization, not a second
 qualification gate. Supported operations require the Nix devShell (direnv or `nix develop`),
-which supplies JDK 25 and Gradle 9.8.0. In CI/release the credential-free
+which supplies JDK 25 and Gradle 9.8.2. In CI/release the credential-free
 release-runtime supplies those same packages and the launcher; `TOTIPO_GRADLE`
 names its explicit executable, including nested and remote consumers. There is
 no wrapper or separately downloaded Gradle build path.

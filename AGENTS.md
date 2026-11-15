@@ -1,7 +1,7 @@
 # Java qualification
 
 Supported development, qualification and release require Nix. The locked flake
-supplies JDK 25 and Gradle 9.8.0; activate the devShell through direnv or
+supplies JDK 25 and Gradle 9.8.2; activate the devShell through direnv or
 `nix develop`. There is no separate wrapper or host-toolchain build path.
 CI/release use `TOTIPO_GRADLE`, the explicit release-runtime executable; nested
 consumers inherit it. Local commands below run in the activated devShell.

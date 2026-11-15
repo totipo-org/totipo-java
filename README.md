@@ -153,4 +153,4 @@ in response to an arbitrary open failure.
 
 Library consumption requires Java 17 or later; supported repository development,
 qualification and release require the locked Nix environment with JDK 25 and
-Gradle 9.8.0. See the development guide before building from source.
+Gradle 9.8.2. See the development guide before building from source.

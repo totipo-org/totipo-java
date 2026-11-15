@@ -32,7 +32,7 @@
           inherit jdk gradle;
         };
       in
-      assert gradle.version == "9.8.0";
+      assert gradle.version == "9.8.2";
       {
         formatter = pkgs.nixpkgs-fmt;
         # One library build, with a useful unsigned Maven-shaped output.
