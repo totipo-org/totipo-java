@@ -15,6 +15,7 @@ final class ApplicationSession implements VaultSession {
     private final Object sessionIdentity = new Object();
     private final byte[] root;
     private final VaultId vaultId;
+    private final byte[] canonicalVault;
     private final org.totipo.spi.TotipoStore store;
     // Lock order is provider gate -> local. Never wait for provider I/O holding local.
     private final ReentrantLock gate = new ReentrantLock();
@@ -42,13 +43,48 @@ final class ApplicationSession implements VaultSession {
     // Replaced each observation; captured states/merge bases may retain an older causal index.
     private Map<ObjectId, CausalFact> ancestry = Map.of();
 
-    ApplicationSession(byte[] root, VaultId vaultId, org.totipo.spi.TotipoStore store) {
-        this.root = root.clone(); this.vaultId = vaultId; this.store = store;
+    ApplicationSession(byte[] root, byte[] canonicalVault, org.totipo.spi.TotipoStore store) {
+        this.root = root.clone(); this.canonicalVault = canonicalVault.clone();
+        this.vaultId = Totipo.vaultId(canonicalVault); this.store = store;
         current = new State(this, nextState++, new ObservationProgress.Enumerating(0), List.of(), List.of());
         publisher = new ApplicationStates(current);
         requestRefresh();
     }
     @Override public VaultId vaultId() { return vaultId; }
+    @Override public org.totipo.backup.BackupImport prepareImport(java.io.InputStream input,
+            org.totipo.backup.BackupLimits limits) throws java.io.IOException {
+        requireOpen();
+        var archive = BackupZip.read(input, limits); // Never hold the provider gate across borrowed stream I/O.
+        boolean transferred = false;
+        try {
+            gate.lock();
+            try {
+                requireOpen();
+                var plan = HistoryImport.prepare(archive, canonicalVault, root, store, () -> closing);
+                var handle = new Imported(plan);
+                own(handle); transferred = true;
+                return handle;
+            } finally { gate.unlock(); }
+        } finally { if (!transferred) archive.close(); }
+    }
+    private final class Imported implements org.totipo.backup.BackupImport {
+        private final HistoryImport plan;
+        private boolean ended;
+        Imported(HistoryImport plan) { this.plan = plan; }
+        private void active() { if (ended) throw new IllegalStateException("Import closed"); }
+        @Override public org.totipo.backup.BackupSummary summary() {
+            gate.lock();
+            try { active(); return plan.summary; } finally { gate.unlock(); }
+        }
+        @Override public org.totipo.backup.ImportResult apply() {
+            return providerAccess(() -> { active(); return plan.apply(store, () -> closing); });
+        }
+        @Override public void close() {
+            gate.lock();
+            try { if (!ended) { ended = true; plan.close(); release(this); } }
+            finally { gate.unlock(); }
+        }
+    }
     @Override public org.totipo.backup.BackupCapture captureBackup(org.totipo.backup.BackupLimits limits)
             throws java.io.IOException {
         requireOpen(); gate.lock();

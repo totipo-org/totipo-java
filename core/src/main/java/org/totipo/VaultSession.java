@@ -7,6 +7,23 @@ import java.util.concurrent.Flow;
  * @see VaultState
  */
 public interface VaultSession extends AutoCloseable {
+    /** Freezes and verifies a complete profile-1 ZIP, authenticates all objects with this session,
+     * recomputes archive-only gaps, and preflights every destination target before returning authority.
+     * Requires exact archived VAULT equality with the authenticated bootstrap and fresh destination.
+     * No canonical writes or refresh occur. Public descriptive validation results are never inputs.
+     * Borrows a nonseekable stream through EOF without closing it. Bounded ingress occurs outside
+     * the provider gate; authentication/preflight enter the session gate afterward. Close during
+     * ingress does not wait for the borrowed stream and prevents subsequent admission.
+     * Never call while holding an external bridge lock. Keep off the UI thread.
+     * @param input borrowed untrusted archive stream; caller owns blocked-I/O cancellation
+     * @param limits bounded archive/object budgets
+     * @return session-owned replay handle; caller must close
+     * @throws java.io.IOException invalid archive, identity mismatch, target conflict/unavailability,
+     * capacity or cooperative cancellation; no installation has occurred
+     * @throws SessionClosedException if the session is closing or closed
+     */
+    org.totipo.backup.BackupImport prepareImport(java.io.InputStream input, org.totipo.backup.BackupLimits limits)
+            throws java.io.IOException;
     /** Captures all supported locally observed encrypted history under this session's provider gate.
      * Requires an open authenticated session; reads bounded enumeration and fresh exact bytes,
      * validates each object and rechecks the immutable vault binding. Incomplete enumeration,

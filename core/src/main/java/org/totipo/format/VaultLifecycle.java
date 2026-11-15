@@ -45,7 +45,7 @@ public final class VaultLifecycle {
                 if (result.status() == VaultUnlockResult.Status.UNLOCKED) {
                     byte[] root = result.root();
                     try {
-                        var session = new ApplicationSession(root, vaultId(canonical), store);
+                        var session = new ApplicationSession(root, canonical, store);
                         transferred = true;
                         return new OpenResult.Opened(session);
                     } finally { wipe(root); }
@@ -93,7 +93,7 @@ public final class VaultLifecycle {
             canonical = present.bytes();
             if (canonical.length != VaultBootstrap.RECORD_BYTES || !Arrays.equals(candidate, canonical)
                     || !valid(canonical, encoded, root)) return new CreateVaultResult.Uncertain();
-            var session = new ApplicationSession(root, vaultId(canonical), store);
+            var session = new ApplicationSession(root, canonical, store);
             transferred = true;
             return new CreateVaultResult.Created(session);
         } catch (SecurityException | UnsupportedOperationException failure) {

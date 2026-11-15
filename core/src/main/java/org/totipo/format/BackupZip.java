@@ -77,9 +77,29 @@ public final class BackupZip {
 
     /** Internal bridge; applications use BackupArchives.inspect. */
     public static BackupSummary inspect(InputStream input, BackupLimits limits) throws IOException {
+        try (var archive = read(input, limits)) { return archive.summary; }
+    }
+    /** Owned ingress; constructed only after complete profile verification. */
+    static final class Archive implements AutoCloseable {
+        private byte[] bytes;
+        final BackupSummary summary;
+        private final List<Record> records;
+        Archive(byte[] bytes, BackupSummary summary, List<Record> records) {
+            this.bytes = bytes; this.summary = summary; this.records = List.copyOf(records);
+        }
+        byte[] payload(int index) {
+            var record = records.get(index);
+            int offset = record.offset + 30 + record.name.length();
+            return Arrays.copyOfRange(bytes, offset, offset + record.size);
+        }
+        String name(int index) { return records.get(index + 2).name.substring(11); }
+        @Override public void close() { if (bytes != null) { Arrays.fill(bytes, (byte) 0); bytes = null; } }
+    }
+    static Archive read(InputStream input, BackupLimits limits) throws IOException {
         Objects.requireNonNull(input); Objects.requireNonNull(limits);
         // Fixed allocation prevents ByteArrayOutputStream geometric growth/copies on hostile ingress.
         byte[] bytes = new byte[limits.archiveBytes()];
+        boolean transferred = false;
         try {
             int used = 0;
             while (used < bytes.length) {
@@ -91,8 +111,12 @@ public final class BackupZip {
             }
             cancelled();
             if (used == bytes.length && input.read() != -1) throw new BackupException(CAPACITY);
-            return verify(bytes, used, limits);
-        } finally { Arrays.fill(bytes, (byte) 0); }
+            var records = new ArrayList<Record>();
+            var summary = verify(bytes, used, limits, records);
+            var archive = new Archive(bytes, summary, records);
+            transferred = true;
+            return archive;
+        } finally { if (!transferred) Arrays.fill(bytes, (byte) 0); }
     }
     private record Record(String name, int offset, int size, long crc, int flags, int time, int date) { }
     private static int u16(byte[] b, int p) throws BackupException {
@@ -111,7 +135,7 @@ public final class BackupZip {
         for (int i = p; i < p + n; i++) require(b[i] >= 32 && b[i] <= 126);
         return new String(b, p, n, StandardCharsets.US_ASCII);
     }
-    private static BackupSummary verify(byte[] b, int end, BackupLimits limits) throws IOException {
+    private static BackupSummary verify(byte[] b, int end, BackupLimits limits, List<Record> verified) throws IOException {
         require(end >= 22);
         int eocd = end - 22;
         require(u32(b, eocd) == 0x06054b50L);
@@ -178,6 +202,7 @@ public final class BackupZip {
         require(number.matches("0|[1-9][0-9]{0,4}"));
         int gaps = Integer.parseInt(number); require(gaps <= (count - 2) * 4);
         var digest = digest(); digest.update(b, 0, end);
+        verified.addAll(records);
         return new BackupSummary(id, count - 2, gaps, false, HexFormat.of().formatHex(digest.digest()));
     }
 }

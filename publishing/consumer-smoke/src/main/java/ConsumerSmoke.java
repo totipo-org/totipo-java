@@ -73,6 +73,12 @@ public final class ConsumerSmoke {
     public static BackupCapture capture(VaultSession session, BackupLimits limits) throws IOException {
         return session.captureBackup(limits);
     }
+    public static BackupImport prepareImport(VaultSession session, java.io.InputStream input, BackupLimits limits) throws IOException {
+        return session.prepareImport(input, limits);
+    }
+    public static ImportResult applyImport(BackupImport operation) {
+        return operation.apply();
+    }
     public static BackupSummary inspect(java.io.InputStream input, BackupLimits limits) throws IOException {
         return BackupArchives.inspect(input, limits);
     }

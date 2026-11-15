@@ -12,7 +12,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class ObjectCandidateBoundaryTest {
     private static ApplicationSession session(byte[] root) throws InterruptedException {
         var observed = new CountDownLatch(1);
-        var session = new ApplicationSession(root, new VaultId(new byte[32]), new TestStore() {
+        byte[] canonical = new byte[87];
+        System.arraycopy("TOTIPO-VLT".getBytes(java.nio.charset.StandardCharsets.US_ASCII), 0, canonical, 0, 10);
+        canonical[10] = 1;
+        var session = new ApplicationSession(root, canonical, new TestStore() {
             @Override public org.totipo.spi.ObjectScan scanObjects() {
                 observed.countDown(); return new org.totipo.spi.ObjectScan.Complete(List.of());
             }

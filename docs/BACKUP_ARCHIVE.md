@@ -152,8 +152,9 @@ EOF, accepts nonseekable/short-read input, stages bounded private memory, verifi
 the whole container and returns a descriptive `BackupSummary`. It closes only
 internal wrappers and wipes/releases staging on every exit. It retains no payload,
 key or storage authority. Publicly constructed summaries/captures confer no import
-permission. There are no restore/import APIs, target paths, canonical writers or
-password-based archive-validation contexts in this milestone.
+permission. R1 introduced no restore/import authority. R2 adds the separate
+authenticated open-session import contract below; detached password-based archive
+validation and new-location restoration remain deferred.
 
 `BackupException` extends IOException with CAPACITY, CANCELLED,
 SOURCE_UNAVAILABLE, INVALID_OBJECT, VAULT_CHANGED, MALFORMED and UNSUPPORTED.
@@ -203,3 +204,49 @@ Golden fixtures and their fixed digests live in
 credentials, compare writer output byte for byte, and inspect all three fixtures.
 Android API 30/current-device ZIP behavior, SAF close/readback/cancellation and
 Desktop destination installation remain product qualification requirements.
+
+## R2 authenticated additive import (profile unchanged)
+
+`VaultSession.prepareImport(InputStream, BackupLimits)` freezes the entire verified
+ZIP before session-gated authentication and destination preflight. It owns one fixed
+archive-budget array (at most 6 MiB), bounded record/fact tables and one transient
+1024-byte payload at a time. There is no extraction, filesystem scratch or growing
+payload list. `observedEntries` applies to capture enumeration; import preflights
+only its bounded archive membership. The caller owns the borrowed stream and blocked
+I/O cancellation. No canonical write occurs during preparation, even when late
+objects are invalid or an occupied destination target is incompatible.
+
+The archived exact 87 bytes must match both the authenticated session bootstrap
+and fresh canonical destination VAULT. Matching a descriptive VaultId is insufficient;
+a different wrapping of the same recovered root is rejected. Every object passes
+ordinary envelope authentication, keyed ID, padding/framing and canonical TOKEN
+validation. Temporary parsed secrets are cleared. The authenticated handle summary
+recomputes archive-only gaps; a structurally legal incorrect manifest gap claim
+cannot override it. Destination observations may resolve these gaps separately.
+No origin, omission, completeness or freshness authentication is implied.
+
+The returned session-owned `BackupImport` is the only installation capability.
+It accepts no public `Valid`, summary, capture, root or store. Each apply rechecks
+all targets and exact VAULT, then publishes every frozen representation in stable
+ID order through the provider. Exact-existing objects receive normal acknowledgement
+barriers; occupied-different/invalid/unreadable/wrong-kind entries remain untouched.
+No-replace publication handles concurrent same/different-byte winners. VAULT is
+checked before each publication and at completion; no VAULT write, deletion,
+rewriting, new assertion or parent closure requirement is introduced.
+
+The handle supports explicit repeated apply of the same immutable evidence. Counts
+and uncertainty are cumulative per unique object. Reads never recover an uncertain
+acknowledgement; positive provider acknowledgement does. Complete/no-op, partial,
+uncertain and definite pre-apply failure are distinguished by `ImportResult`, with
+coarse stop reasons. A complete batch is not an atomic filesystem transaction.
+Cancellation/close stops between objects and never hides earlier effects. Session
+close waits for admitted provider work and releases the handle; callers must also
+close handles. Closed-session retry requires new preparation.
+
+Apply does not request or complete observation. Applications arrange refresh after
+possible writes and inspect ordinary state/diagnostics separately. Android uses its
+existing coordinated provider and product admission outside the bridge lock; no
+session-under-bridge calls are permitted. Release external coordination before
+observation. Full ownership, result accounting and late-cancellation semantics are
+specified in [API_DESIGN.md](../API_DESIGN.md#authenticated-additive-history-import)
+and public Javadocs. R1's ZIP profile and golden bytes are unchanged.

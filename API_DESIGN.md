@@ -251,6 +251,79 @@ and [shared fixtures](core/src/test/resources/backup/profile-1/README.md) are no
 application-format documentation. v1/r19 is unchanged. Android SAF and Desktop
 destination operations remain application responsibilities, separately qualified.
 
+## Authenticated additive history import
+
+`session.prepareImport(InputStream, BackupLimits)` borrows a stream through EOF,
+completely verifies profile 1, and freezes bounded private ciphertext memory
+outside the provider gate. It checks session admission before ingress and after
+taking the provider gate. A blocked SAF stream does not retain a root lease;
+callers own blocked-I/O cancellation and retirement. Concurrent jobs each consume
+their own bounded memory. No canonical writes or refresh occur in preparation.
+
+Under the gate, archived VAULT must equal the exact bootstrap authenticated at
+session opening, and fresh destination VAULT must match. Every archived object
+uses the ordinary TokenStoreReader cryptographic/protocol validator. Temporary
+parsed secrets are promptly cleared. Archive-only token/parent gaps are recomputed,
+never trusted from the manifest. Missing/wrong-token ancestry is permitted. Every
+destination target is preflighted before returning an owned `BackupImport` handle.
+Public summaries, candidate-validation values and captures confer no authority.
+The open session supplies authentication without password re-entry or KDF work.
+
+The handle owns immutable ciphertext and non-secret diagnostics until its close or
+session close; callers must close it. Summary/apply/close serialize under the
+session provider gate. New state emissions do not invalidate its evidence.
+Each `apply()` repeats complete preflight, then replays all objects in stable ID
+order through the existing create-only provider, including exact-existing entries
+for durability acknowledgement. It freshly checks exact VAULT before each call
+and at completion. Preflight reserves nothing; the provider enforces no replacement.
+Different bytes, invalid occupied objects, wrong kinds and unreadable/unsafe entries
+are never repaired. Import creates no semantic assertion, edge or merge resolution,
+and never writes VAULT or prunes history.
+
+`ImportResult` counts cumulative unique-object knowledge for the handle. Installed
+counts positive Written acknowledgements; retained counts exact acknowledgements
+without a known Written; uncertain counts entered publications without a subsequent
+positive acknowledgement; remaining counts the rest. These partition the archive.
+A lost installation acknowledged as exact on retry is retained: its original
+creation cannot be inferred. Reads never clear uncertainty. Failed/ExistingDifferent
+preserve previous knowledge; Uncertain and unchecked publication failure preserve
+possible persistence. Explicit repeat replays the frozen evidence, without source
+rereading or reauthoring. There is no automatic retry.
+
+COMPLETE requires an entire acknowledged replay and final exact VAULT check.
+NO_OP additionally requires no Written or possible installation ever observed by
+the handle (including empty archives). UNCERTAIN takes precedence while any object
+lacks acknowledgement after possible publication. PARTIAL is an incomplete attempt
+with some positive acknowledgements and no uncertainty; FAILED has neither positive
+acknowledgements nor possible publication on this handle. A final binding failure
+can produce PARTIAL even with all objects acknowledged. Stop reasons distinguish
+cancellation, closing, changed VAULT, target conflict/unavailability and storage.
+These are persistence facts, not an atomic transaction or future retention promise.
+
+This is blocking provider work, separate from token saves. Interruption and closing
+are checked between objects; an entered provider call retires normally. Cancellation
+never rolls back storage; completion can win a late cancellation/closure. Entrants
+after closing reject with SessionClosedException, while prior result values remain
+readable. Session close waits for admitted provider work, then disposes handles and
+root material. Further retry needs a new session/preparation. Closing a handle never
+removes canonical history.
+
+Installation and observation are separate: import neither observes state nor
+requests refresh. After successful, partial or uncertain application, including
+cancellation after possible publication, applications arrange ordinary observation
+outside external coordination. Returning from requestRefresh proves no completed
+scan. Keep persistence outcomes separate from resulting states/diagnostics.
+Android calls session/handle methods outside its bridge lock. Its existing whole-root
+owner serializes store calls and excludes competing bridge workflows through product
+admission; Java adds no root lease or batch bridge lock. Release external coordination
+before requesting observation. The conditional two-pass barrier applies only under
+its reviewed assumptions; Desktop keeps ordinary shared-provider convergence rules.
+
+The existing trusted-local namespace model remains: checks cannot provide an
+adversarial cross-file transaction against external VAULT substitution. Profile 1
+and v1/r19 are unchanged. New-location restoration, detached password validation,
+location reservation and platform UI/Sync orchestration remain future work.
+
 ## Independent immutable object candidates
 
 `session.validateObject(RevisionId objectId, byte[] representation)` synchronously
