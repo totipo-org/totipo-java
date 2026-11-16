@@ -7,6 +7,7 @@ import org.gradle.api.publish.maven.tasks.GenerateMavenPom
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
 import org.gradle.plugins.signing.Sign
+import org.gradle.api.tasks.StopExecutionException
 import org.gradle.plugins.ide.eclipse.model.EclipseModel
 
 plugins {
@@ -123,8 +124,12 @@ subprojects {
     // One shared check reauthenticates all ten originals before either module's
     // Maven publisher copies signatures into its local Central staging tree.
     tasks.configureEach {
-        if (this is JavaCompile || this is Javadoc || this is AbstractArchiveTask
-            || this is GenerateMavenPom || this is GenerateModuleMetadata || this is Sign) {
+        if (this is Sign && freezePublicationInputs) {
+            // Gradle also consults Sign.onlyIf when selecting signature artifacts
+            // for publication. Stop generation without suppressing those artifacts.
+            doFirst { throw StopExecutionException("Reuse accepted publication signatures during upload") }
+        } else if (this is JavaCompile || this is Javadoc || this is AbstractArchiveTask
+            || this is GenerateMavenPom || this is GenerateModuleMetadata) {
             onlyIf("Accepted publication inputs must not rebuild during upload") { !freezePublicationInputs }
         }
     }
