@@ -1,5 +1,7 @@
 package org.totipo.format;
 
+import static java.util.stream.Collectors.collectingAndThen;
+import static java.util.stream.Collectors.toList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,7 +32,7 @@ final class TokenGraph {
                 Set<TokenValue> currentValues) {
         View {
             objects = List.copyOf(objects);
-            currentGroups = currentGroups.stream().map(List::copyOf).toList();
+            currentGroups = currentGroups.stream().map(List::copyOf).collect(collectingAndThen(toList(), Collections::unmodifiableList));
             heads = List.copyOf(heads);
             unresolvedParents = List.copyOf(unresolvedParents);
             currentValues = immutableSet(currentValues);
@@ -67,7 +69,7 @@ final class TokenGraph {
             partitions.computeIfAbsent(object.token().tokenId(), ignored -> new ArrayList<>()).add(object);
         }
         var identities = new ArrayList<>(partitions.keySet());
-        identities.sort((a, b) -> Arrays.compareUnsigned(a.bytes(), b.bytes()));
+        identities.sort(TokenId::compareTo);
         var views = new LinkedHashMap<TokenId, View>();
         for (var id : identities) {
             var objects = partitions.get(id);

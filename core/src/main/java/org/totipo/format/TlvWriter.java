@@ -16,7 +16,7 @@ final class TlvWriter implements AutoCloseable {
         bytes.reserve(4 + value.length);
         bytes.write(tag >>> 8); bytes.write(tag);
         bytes.write(value.length >>> 8); bytes.write(value.length);
-        bytes.writeBytes(value);
+        bytes.write(value, 0, value.length);
         return this;
     }
 

@@ -1,7 +1,7 @@
 package org.totipo;
 
 import java.util.Arrays;
-import java.util.HexFormat;
+import org.totipo.internal.Hex;
 import java.util.Objects;
 
 /** Non-secret SHA-256 identity of the exact canonical 87-byte VAULT representation.
@@ -14,7 +14,7 @@ public final class VaultId {
         this.bytes = bytes.clone();
     }
     public byte[] bytes() { return bytes.clone(); }
-    public String hex() { return HexFormat.of().formatHex(bytes); }
+    public String hex() { return Hex.format(bytes); }
     @Override public boolean equals(Object other) { return other instanceof VaultId id && Arrays.equals(bytes, id.bytes); }
     @Override public int hashCode() { return Arrays.hashCode(bytes); }
     @Override public String toString() { return "VaultId[" + hex() + "]"; }

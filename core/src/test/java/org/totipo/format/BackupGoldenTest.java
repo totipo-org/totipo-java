@@ -79,6 +79,27 @@ class BackupGoldenTest {
             }
         } finally { secret.clear(); Arrays.fill(root, (byte) 0); }
     }
+    @Test void canonicalWriterMatchesGoldenBytesInEveryAvailableTimeZone() throws Exception {
+        var previous = TimeZone.getDefault();
+        try {
+            for (String name : List.of("empty", "history", "missing-parent")) {
+                byte[] golden = fixture(name); var store = new Store(golden);
+                byte[] spool = new byte[store.objects.size() * 1024]; int offset = 0;
+                for (byte[] object : store.objects.values()) {
+                    System.arraycopy(object, 0, spool, offset, object.length); offset += object.length;
+                }
+                for (String zone : TimeZone.getAvailableIDs()) {
+                    TimeZone.setDefault(TimeZone.getTimeZone(zone));
+                    try (var capture = new BackupZip.Frozen(store.vault.clone(), spool.clone(),
+                            new ArrayList<>(store.objects.keySet()), name.equals("missing-parent") ? 1 : 0, BackupLimits.DEFAULT)) {
+                        var output = new ByteArrayOutputStream(); capture.writeTo(output);
+                        assertArrayEquals(golden, output.toByteArray(), name + " in " + zone);
+                        assertEquals(BackupZip.hash(golden), capture.summary().archiveSha256());
+                    }
+                }
+            }
+        } finally { TimeZone.setDefault(previous); }
+    }
     @Test void maximumCapturePreservesMoreThan512ObjectsAndExactBoundary() throws Exception {
         var store = new Store(fixture("empty"));
         byte[] root = new byte[32]; Arrays.fill(root, (byte) 0x11);

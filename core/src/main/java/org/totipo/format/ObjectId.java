@@ -2,7 +2,7 @@ package org.totipo.format;
 
 import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.HexFormat;
+import org.totipo.internal.Hex;
 
 /** Owned 32-byte keyed v1 semantic identity, distinct from its filename encoding. */
 final class ObjectId {
@@ -19,7 +19,7 @@ final class ObjectId {
         if (filename.length() != 64 || !filename.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("Invalid object filename");
         }
-        return new ObjectId(HexFormat.of().parseHex(filename));
+        return new ObjectId(Hex.parse(filename));
     }
 
     static ObjectId compute(byte[] idKey, byte[] semantic) {
@@ -40,7 +40,7 @@ final class ObjectId {
 
     byte[] bytes() { return bytes.clone(); }
 
-    String filename() { return HexFormat.of().formatHex(bytes); }
+    String filename() { return Hex.format(bytes); }
 
     @Override
     public boolean equals(Object other) {

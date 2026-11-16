@@ -1,6 +1,7 @@
 package org.totipo.storage.nio;
 
 import org.totipo.spi.*;
+import org.totipo.internal.BoundedInput;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -47,7 +48,7 @@ final class NioReads {
             // Never infer size outcomes from attributes: EOF/extra byte must actually be observed.
             byte[] bytes;
             try (var in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
-                bytes = in.readNBytes(expected);
+                bytes = BoundedInput.read(in, expected);
                 if (bytes.length < expected) return new BoundedRead.Undersized(bytes.length);
                 if (in.read() != -1) return new BoundedRead.Oversized();
             }

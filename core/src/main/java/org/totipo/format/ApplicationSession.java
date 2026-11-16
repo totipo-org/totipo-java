@@ -1,5 +1,8 @@
 package org.totipo.format;
 
+import static java.util.stream.Collectors.collectingAndThen;
+import static java.util.stream.Collectors.toList;
+import org.totipo.internal.Hex;
 import org.totipo.*;
 import java.time.Duration;
 import java.time.Instant;
@@ -173,7 +176,7 @@ final class ApplicationSession implements VaultSession {
                 var alternatives = new ArrayList<TokenAlternative>();
                 grouped.forEach((key, basis) -> alternatives.add(new Alternative(this, id, key, descriptor(values.get(key)), basis)));
                 var unresolved = view.unresolvedParents().stream()
-                        .map(p -> new UnresolvedReference(revision(p.child()), revision(p.parent()))).toList();
+                        .map(p -> new UnresolvedReference(revision(p.child()), revision(p.parent()))).collect(collectingAndThen(toList(), Collections::unmodifiableList));
                 tokens.add(new Token(id, alternatives, heads, unresolved, competition(alternatives)));
             }
             // No secret is used as a hash key after it is wiped.
@@ -217,7 +220,7 @@ final class ApplicationSession implements VaultSession {
             try {
                 for (var resource : Set.copyOf(owned)) VaultLifecycle.cleanup(resource);
                 owned.clear();
-                var secrets = values.values().stream().map(v -> v.credential().secret()).toList();
+                var secrets = values.values().stream().map(v -> v.credential().secret()).collect(collectingAndThen(toList(), Collections::unmodifiableList));
                 valueIds.clear(); values.clear(); secrets.forEach(SecurityBytes::clear);
                 Arrays.fill(root, (byte) 0); ancestry = Map.of();
             } finally { local.unlock(); }
@@ -247,14 +250,14 @@ final class ApplicationSession implements VaultSession {
         return new TokenDescriptor(TokenStatus.values()[v.status() - 1], v.issuer(), v.account(),
                 TotpAlgorithm.values()[v.credential().algorithm() - 1], v.credential().digits(), Duration.ofSeconds(v.credential().period()));
     }
-    static org.totipo.TokenId publicId(TokenId id) { return new org.totipo.TokenId(HexFormat.of().formatHex(id.bytes())); }
-    static TokenId internalId(org.totipo.TokenId id) { return new TokenId(HexFormat.of().parseHex(id.hex())); }
+    static org.totipo.TokenId publicId(TokenId id) { return new org.totipo.TokenId(Hex.format(id.bytes())); }
+    static TokenId internalId(org.totipo.TokenId id) { return new TokenId(Hex.parse(id.hex())); }
     static RevisionId revision(ObjectId id) { return new RevisionId(id.filename()); }
     static ObjectId internalId(RevisionId id) { return ObjectId.fromFilename(id.hex()); }
     static ClientMetadata metadata(TokenMetadata m) { return new ClientMetadata(m.clientName(), m.clientTime().map(UInt64::rawBits)); }
     static TokenMetadata metadata(ClientMetadata m) { return new TokenMetadata(m.clientName(), m.clientTimeBits().map(UInt64::new)); }
     static List<ObjectId> parents(Collection<TokenHead> heads) {
-        return heads.stream().map(h -> internalId(h.revision())).distinct().sorted(TokenGraph.OBJECT_ORDER).toList();
+        return heads.stream().map(h -> internalId(h.revision())).distinct().sorted(TokenGraph.OBJECT_ORDER).collect(collectingAndThen(toList(), Collections::unmodifiableList));
     }
     TokenCompetition competition(List<TokenAlternative> alternatives) {
         var secrets = new LinkedHashMap<SecurityBytes, List<TokenAlternative>>();
@@ -263,12 +266,12 @@ final class ApplicationSession implements VaultSession {
         return new TokenCompetition(field(alternatives, TokenDescriptor::status), field(alternatives, TokenDescriptor::issuer),
                 field(alternatives, TokenDescriptor::account), field(alternatives, TokenDescriptor::algorithm),
                 field(alternatives, TokenDescriptor::digits), field(alternatives, TokenDescriptor::period),
-                new CompetingSecret(secrets.values().stream().map(SecretGroup::new).toList()));
+                new CompetingSecret(secrets.values().stream().map(SecretGroup::new).collect(collectingAndThen(toList(), Collections::unmodifiableList))));
     }
     private static <T> CompetingField<T> field(List<TokenAlternative> alternatives, Function<TokenDescriptor, T> getter) {
         var grouped = new LinkedHashMap<T, List<TokenAlternative>>();
         for (var a : alternatives) grouped.computeIfAbsent(getter.apply(a.descriptor()), ignored -> new ArrayList<>()).add(a);
-        return new CompetingField<>(grouped.entrySet().stream().map(e -> new CompetingField.Value<>(e.getKey(), e.getValue())).toList());
+        return new CompetingField<>(grouped.entrySet().stream().map(e -> new CompetingField.Value<>(e.getKey(), e.getValue())).collect(collectingAndThen(toList(), Collections::unmodifiableList)));
     }
     /** One immutable graph per token observation, built without recursively following edges.
      * Parent views resolve against this graph only, even for defensively cyclic graphs.
@@ -279,7 +282,7 @@ final class ApplicationSession implements VaultSession {
         History(Object sessionIdentity, Map<ObjectId, CausalFact> facts) {
             var built = new HashMap<ObjectId, Head>();
             facts.forEach((id, fact) -> built.put(id, new Head(sessionIdentity, id, fact, this,
-                    fact.parents().stream().filter(facts::containsKey).toList())));
+                    fact.parents().stream().filter(facts::containsKey).collect(collectingAndThen(toList(), Collections::unmodifiableList)))));
             heads = Map.copyOf(built);
         }
     }
@@ -362,7 +365,7 @@ final class ApplicationSession implements VaultSession {
             return owner.access(() -> {
                 var a = owner.alternative(reference);
                 var matching = token(a.token).stream().flatMap(t -> t.alternatives().stream())
-                        .filter(v -> owner.alternative(v).key == a.key).flatMap(v -> v.heads().stream()).toList();
+                        .filter(v -> owner.alternative(v).key == a.key).flatMap(v -> v.heads().stream()).collect(collectingAndThen(toList(), Collections::unmodifiableList));
                 return owner.new Update(a.token, parents(matching.isEmpty() ? a.heads : matching), owner.value(a.key));
             });
         }
@@ -376,7 +379,7 @@ final class ApplicationSession implements VaultSession {
                 if (alternatives.isEmpty()) throw new IllegalArgumentException("Empty merge basis");
                 var id = owner.alternative(alternatives.get(0)).token;
                 for (var a : alternatives) if (!owner.alternative(a).token.equals(id)) throw new IllegalArgumentException("Mixed tokens");
-                var basis = parents(alternatives.stream().flatMap(a -> a.heads().stream()).toList());
+                var basis = parents(alternatives.stream().flatMap(a -> a.heads().stream()).collect(collectingAndThen(toList(), Collections::unmodifiableList)));
                 var frontier = token(id).map(t -> parents(t.heads())).orElse(List.of());
                 return owner.new Merge(id, basis, frontier, alternatives, causalFacts);
             });
@@ -505,7 +508,7 @@ final class ApplicationSession implements VaultSession {
             this.originalAncestry = originalAncestry;
             status = agreed(competition.status()); issuer = agreed(competition.issuer()); account = agreed(competition.account());
             algorithm = agreed(competition.algorithm()); digits = agreed(competition.digits()); period = agreed(competition.period());
-            choices = competition.secret().groups().stream().map(g -> (MergeSecretChoice) new Choice(this, g.alternatives())).toList();
+            choices = competition.secret().groups().stream().map(g -> (MergeSecretChoice) new Choice(this, g.alternatives())).collect(collectingAndThen(toList(), Collections::unmodifiableList));
             if (choices.size() == 1) inheritedSecret = alternative(choices.get(0).alternatives().get(0)).key;
         }
         @Override MergeToken self() { return this; }
@@ -609,7 +612,7 @@ final class ApplicationSession implements VaultSession {
             } catch (java.io.IOException | RuntimeException failure) {
                 return new SaveResult.PublicationUncertain(new Retry(this));
             }
-            var result = new SaveResult.Saved(token, stages.stream().map(s -> revision(s.id())).toList());
+            var result = new SaveResult.Saved(token, stages.stream().map(s -> revision(s.id())).collect(collectingAndThen(toList(), Collections::unmodifiableList)));
             close();
             // Publication certainty is independent of a later observation's availability.
             if (!closing) {

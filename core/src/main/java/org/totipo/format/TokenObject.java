@@ -1,6 +1,5 @@
 package org.totipo.format;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -17,7 +16,7 @@ record TokenObject(TokenId tokenId, List<ObjectId> parents, TokenValue value, To
         Objects.requireNonNull(metadata);
         if (parents.size() > MAX_PARENTS) throw new IllegalArgumentException("Too many parents");
         for (int i = 1; i < parents.size(); i++) {
-            if (Arrays.compareUnsigned(parents.get(i - 1).bytes(), parents.get(i).bytes()) >= 0) {
+            if (TokenGraph.OBJECT_ORDER.compare(parents.get(i - 1), parents.get(i)) >= 0) {
                 throw new IllegalArgumentException("Parents must be strictly increasing");
             }
         }

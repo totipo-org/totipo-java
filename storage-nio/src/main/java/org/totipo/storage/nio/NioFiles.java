@@ -1,5 +1,6 @@
 package org.totipo.storage.nio;
 
+import org.totipo.internal.BoundedInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -43,7 +44,7 @@ final class NioFiles {
     }
     static byte[] read(Path path, int limit) throws IOException {
         regular(path);
-        try (var in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) { return in.readNBytes(limit); }
+        try (var in = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) { return BoundedInput.read(in, limit); }
     }
     static void cleanup(Path temp) {
         try { Files.deleteIfExists(temp); } catch (IOException | SecurityException ignored) { /* Best effort. */ }

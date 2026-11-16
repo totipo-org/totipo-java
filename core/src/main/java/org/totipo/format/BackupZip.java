@@ -1,11 +1,14 @@
 package org.totipo.format;
 
+import org.totipo.internal.Hex;
+import org.totipo.internal.BoundedInput;
 import org.totipo.*;
 import org.totipo.backup.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.zip.*;
 import static org.totipo.backup.BackupException.Reason.*;
@@ -21,7 +24,7 @@ public final class BackupZip {
         try { return MessageDigest.getInstance("SHA-256"); }
         catch (NoSuchAlgorithmException impossible) { throw new AssertionError(impossible); }
     }
-    static String hash(byte[] bytes) { return HexFormat.of().formatHex(digest().digest(bytes)); }
+    static String hash(byte[] bytes) { return Hex.format(digest().digest(bytes)); }
     static byte[] manifest(VaultId id, int count, int gaps) {
         return ("totipo-backup 1\nprotocol totipo-v1\nvault-id " + id.hex()
                 + "\nconsistency observed-set\nenumeration complete\nauthentication checked\nobject-count "
@@ -41,8 +44,13 @@ public final class BackupZip {
                     + names.size() * (76L + 2 * 75 + 1024);
             if (size > limits.archiveBytes()) throw new BackupException(CAPACITY);
             var digest = digest();
-            write(new DigestOutputStream(OutputStream.nullOutputStream(), digest));
-            summary = new BackupSummary(id, names.size(), gaps, true, HexFormat.of().formatHex(digest.digest()));
+            write(new DigestOutputStream(new OutputStream() {
+                @Override public void write(int value) { }
+                @Override public void write(byte[] bytes, int offset, int length) {
+                    Objects.checkFromIndexSize(offset, length, bytes.length);
+                }
+            }, digest));
+            summary = new BackupSummary(id, names.size(), gaps, true, Hex.format(digest.digest()));
         }
         private void active() { if (spool == null) throw new IllegalStateException("Capture closed"); }
         @Override public synchronized BackupSummary summary() { active(); return summary; }
@@ -71,7 +79,9 @@ public final class BackupZip {
         var entry = new ZipEntry(name);
         entry.setMethod(ZipEntry.STORED); entry.setSize(length); entry.setCompressedSize(length);
         var crc = new CRC32(); crc.update(data, offset, length); entry.setCrc(crc.getValue());
-        entry.setTimeLocal(LocalDateTime.of(1980, 1, 2, 0, 0));
+        // setTime encodes through the default zone. Choose the instant for the fixed local
+        // DOS timestamp, retaining profile 1's bytes without newer ZipEntry methods.
+        entry.setTime(LocalDateTime.of(1980, 1, 2, 0, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
         zip.putNextEntry(entry); zip.write(data, offset, length); zip.closeEntry();
     }
 
@@ -186,7 +196,7 @@ public final class BackupZip {
             for (int i = 0; i < records.size(); i++) {
                 cancelled(); var entry = zip.getNextEntry(); var record = records.get(i);
                 require(entry != null && entry.getName().equals(record.name));
-                byte[] data = zip.readNBytes(record.size + 1); require(data.length == record.size);
+                byte[] data = BoundedInput.read(zip, record.size + 1); require(data.length == record.size);
                 zip.closeEntry(); if (i == 0) manifest = data; else if (i == 1) vault = data;
             }
             require(zip.getNextEntry() == null);
@@ -203,6 +213,6 @@ public final class BackupZip {
         int gaps = Integer.parseInt(number); require(gaps <= (count - 2) * 4);
         var digest = digest(); digest.update(b, 0, end);
         verified.addAll(records);
-        return new BackupSummary(id, count - 2, gaps, false, HexFormat.of().formatHex(digest.digest()));
+        return new BackupSummary(id, count - 2, gaps, false, Hex.format(digest.digest()));
     }
 }
