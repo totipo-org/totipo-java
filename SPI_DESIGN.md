@@ -45,7 +45,7 @@ enumeration budget is not a wall-clock bound on filesystem calls.
 | BoundedRead | Present, Undersized, Oversized, Absent, WrongKind, Unavailable |
 | ObjectWrite | Written, AlreadyPresentExact, ExistingDifferent, Failed, Uncertain |
 | VaultCreate | Created, AlreadyPresent, Failed, Uncertain |
-| StoreFailure | UNAVAILABLE, UNSAFE_NAMESPACE, UNSUPPORTED |
+| StoreFailure | UNAVAILABLE, UNSAFE_NAMESPACE, UNSUPPORTED, CAPACITY |
 
 ## Exact names and observations
 

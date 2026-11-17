@@ -3,7 +3,8 @@
 Java libraries for encrypted TOTP vaults using Totipo Vault Format v1, revision
 **r19**. Totipo provides vault creation/opening, immutable state observations,
 TOKEN create/update/merge operations, conflict handling and session-backed TOTP
-generation. Filesystem applications start with `NioTotipo`.
+generation, encrypted backup, additive history import and new-location restore.
+Filesystem applications start with `NioTotipo`.
 
 ## Add to your application
 
@@ -14,9 +15,9 @@ Both published modules require **Java 17 or later**:
 | `org.totipo:totipo-storage-nio` | Filesystem entry point and NIO storage provider; exposes core transitively. |
 | `org.totipo:totipo-core` | Portable protocol/application API, cryptography and experimental storage SPI; supply your own provider. |
 
-Version **0.2.0** is available from Maven Central
-([core POM](https://repo.maven.apache.org/maven2/org/totipo/totipo-core/0.2.0/totipo-core-0.2.0.pom),
-[NIO POM](https://repo.maven.apache.org/maven2/org/totipo/totipo-storage-nio/0.2.0/totipo-storage-nio-0.2.0.pom)).
+Version **0.3.2** is available from Maven Central
+([core POM](https://repo.maven.apache.org/maven2/org/totipo/totipo-core/0.3.2/totipo-core-0.3.2.pom),
+[NIO POM](https://repo.maven.apache.org/maven2/org/totipo/totipo-storage-nio/0.3.2/totipo-storage-nio-0.3.2.pom)).
 For an ordinary filesystem application, use Gradle Kotlin DSL:
 
 ```kotlin
@@ -24,7 +25,7 @@ repositories {
     mavenCentral()
 }
 dependencies {
-    implementation("org.totipo:totipo-storage-nio:0.2.0")
+    implementation("org.totipo:totipo-storage-nio:0.3.2")
 }
 ```
 
@@ -34,7 +35,7 @@ Or Maven (Central is available by default):
 <dependency>
   <groupId>org.totipo</groupId>
   <artifactId>totipo-storage-nio</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.2</version>
 </dependency>
 ```
 
@@ -43,9 +44,9 @@ Core brings Bouncy Castle **1.86** at runtime for Argon2id; other cryptography
 uses JDK providers. No native access/FFM or Android dependency is required.
 Jackson, JUnit, test fixtures and the vendored specification corpus are test-only
 and excluded from production publications.
-The API and SPI are experimental, with no source/binary stability promise;
-0.2.0 deliberately breaks compatibility with 0.1.x. See the
-[0.2.0 migration notes](review/V0_2_0_RELEASE_NOTES.md#java-consumer-migration).
+The API and SPI are experimental, with no source/binary stability promise.
+For upgrades, see the [0.3.x compatibility notes](review/V0_3_1_RELEASE_NOTES.md#compatibility-and-scope)
+and, if coming from 0.1.x, the [migration guide](review/V0_2_0_RELEASE_NOTES.md#java-consumer-migration).
 
 ## Create or open a filesystem vault
 
@@ -117,6 +118,14 @@ location. `AuthenticationFailed` can mean corrupted/replaced authenticated bytes
 as well as a wrong password. Opening is read-only; never create automatically
 in response to an arbitrary open failure.
 
+## Backup and restore
+
+The `org.totipo.backup` API supports encrypted archive export, additive history
+import and restore into a new location, preserving the original vault identity
+and password. See the [application guide](API_DESIGN.md#portable-encrypted-backup-capture-and-inspection)
+for usage and lifecycle contracts, and the [archive format](docs/BACKUP_ARCHIVE.md)
+for the portable profile.
+
 ## Integration and security boundaries
 
 - VAULT is immutable and create-once. Password, bootstrap policy or root changes
@@ -144,6 +153,8 @@ in response to an arbitrary open failure.
 ## Documentation
 
 - [Application API and lifecycle contracts](API_DESIGN.md)
+- [Portable backup archive, import and restore](docs/BACKUP_ARCHIVE.md)
+- [0.3.2 release notes](review/V0_3_2_RELEASE_NOTES.md)
 - [Experimental storage SPI](SPI_DESIGN.md)
 - [Exact specification pin and corpus](SPEC_PIN.md)
 - [Development setup, IDEs and dependency maintenance](docs/DEVELOPMENT.md)

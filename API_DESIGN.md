@@ -14,7 +14,8 @@ provider, exposing core transitively. Ordinary applications use `NioTotipo` and
 the high-level API; publication does not promote experimental SPI internals to
 normal application entry points. See README for release availability and coordinates.
 <!-- prepared-release:start -->
-Java 0.2.0 is released. See RELEASE_CHECKLIST.md.
+Java 0.3.2 is released. See README.md for published coordinates and RELEASE_CHECKLIST.md
+for release procedures.
 <!-- prepared-release:end -->
 
 Repository setup and IDE guidance live in the [development guide](docs/DEVELOPMENT.md).
@@ -22,7 +23,11 @@ The [release checklist](RELEASE_CHECKLIST.md) owns release orchestration,
 publication acceptance and its verification limits. Release publication is separate
 from application object-publication and retry contracts below.
 
-0.2.0 is intentionally source/binary incompatible with the 0.1.x experimental API.
+The 0.2.0 release intentionally broke source/binary compatibility with the 0.1.x
+experimental API. The 0.3.x API adds backup/import/restore and causal-parent access;
+custom API/SPI implementations should review the
+[0.3.1 compatibility notes](review/V0_3_1_RELEASE_NOTES.md#compatibility-and-scope).
+The [0.3.2 compatibility patch](review/V0_3_2_RELEASE_NOTES.md) preserves those APIs.
 Independent object-candidate validation is retained.
 
 ## Entry points and lifecycle outcomes
@@ -117,7 +122,7 @@ when the sessions opened the same root.
 
 ## Operation classes and state-snapshot semantics
 
-This is the application scheduling model for the existing 0.2.0 API. The detailed
+This is the application scheduling model for the current API. The detailed
 operation contracts below, especially merge freshness and persistence knowledge,
 remain authoritative for their specific rules.
 
@@ -382,7 +387,7 @@ no unsupported-operation fallback; every implementation must supply it.
 
 ### Observation-pass ordering and composition
 
-For library-created Java 0.2.0 sessions using NIO or a store that does not reenter
+For library-created sessions using NIO or a store that does not reenter
 session operations from provider calls, an observation pass starts its configured-
 store observation by scanning objects, reads/validates the discovered candidates,
 evaluates the graph, and constructs its immutable result. A normally completed
